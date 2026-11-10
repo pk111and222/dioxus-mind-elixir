@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Build a client-only Web/WASM bundle. No server or Node.js runtime is needed.
+set -euo pipefail
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+base_path="${1:-/dioxus-mind-elixir/}"
+if [[ "$base_path" != /* || "$base_path" == *'..'* || "$base_path" == *'?'* || "$base_path" == *'#'* ]]; then
+  echo 'Usage: scripts/build-pages /repository-name/ (or / for a custom domain)' >&2
+  exit 2
+fi
+cd "$repo_root/demo"
+# Discard earlier hashed assets so repeated builds stay small and self-contained.
+rm -rf "$repo_root/target/dx/mind-elixir-playground/release/web/public"
+dx build --platform web --release --locked --base-path "$base_path"
+cd "$repo_root"
+# Only replace this script's generated output directory.
+mkdir -p dist
+rm -rf dist/pages
+mkdir -p dist/pages
+cp -R target/dx/mind-elixir-playground/release/web/public/. dist/pages/
+touch dist/pages/.nojekyll
+echo "Pages bundle: $repo_root/dist/pages (base path: $base_path)"

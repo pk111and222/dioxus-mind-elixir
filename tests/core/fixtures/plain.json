@@ -1,0 +1,12 @@
+{
+  "nodeData": {
+    "id": "root", "topic": "中文\nRoot", "metadata": { "业务": [1, true, null] },
+    "children": [
+      { "id": "a", "topic": "A", "expanded": false, "direction": 0,
+        "note": "preserved", "style": { "fontSize": "18px", "background": "#fff" },
+        "children": [{ "id": "a1", "topic": "A1" }] },
+      { "id": "b", "topic": "B", "direction": 1, "children": [] }
+    ]
+  },
+  "direction": 2, "meta": { "revision": 3 }, "compact": true
+}

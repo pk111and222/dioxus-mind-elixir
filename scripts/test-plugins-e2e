@@ -1,0 +1,42 @@
+#!/bin/sh
+# Starts the plugins-only Web application unless DME_APP_URL points to one already running.
+set -eu
+DME_REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$DME_REPO_ROOT"
+DME_SERVER_PID=
+cleanup() {
+    if [ -n "$DME_SERVER_PID" ]; then
+        kill "$DME_SERVER_PID" 2>/dev/null || :
+        wait "$DME_SERVER_PID" 2>/dev/null || :
+    fi
+}
+trap cleanup EXIT INT TERM
+mkdir -p target/plugins-e2e
+if [ -z "${DME_APP_URL:-}" ]; then
+    export DME_APP_URL=http://localhost:8089
+    if curl --fail --silent "$DME_APP_URL" >/dev/null 2>&1; then
+        echo 'Port 8089 is already in use. Set DME_APP_URL to explicitly connect to an existing plugins app.' >&2
+        exit 1
+    fi
+    (cd tests/plugins && exec dx serve --platform web --port 8089 --open false --interactive false --watch false) >target/plugins-e2e/server.log 2>&1 &
+    DME_SERVER_PID=$!
+    DME_READY=0
+    DME_ATTEMPT=0
+    while [ "$DME_ATTEMPT" -lt 180 ]; do
+        if ! kill -0 "$DME_SERVER_PID" 2>/dev/null; then
+            cat target/plugins-e2e/server.log >&2
+            exit 1
+        fi
+        if curl --fail --silent "$DME_APP_URL" >/dev/null 2>&1; then
+            DME_READY=1
+            break
+        fi
+        DME_ATTEMPT=$((DME_ATTEMPT + 1))
+        sleep 1
+    done
+    if [ "$DME_READY" -ne 1 ]; then
+        echo 'Plugin app startup timed out. See target/plugins-e2e/server.log.' >&2
+        exit 1
+    fi
+fi
+cargo run -p mind-elixir-plugin-e2e --locked

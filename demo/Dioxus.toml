@@ -1,0 +1,6 @@
+[application]
+name = "mind-elixir-playground"
+default_platform = "web"
+
+[web.app]
+title = "Dioxus Mind Elixir — Rust mind map playground"

@@ -1,0 +1,16 @@
+body { margin: 0; background: #edf2ed; color: #20372c; font: 14px system-ui, sans-serif; }
+main { max-width: 1440px; margin: auto; padding: 28px; }
+header p:first-child { font-size: 11px; letter-spacing: 2px; color: #527864; }
+h1 { font-size: 32px; margin: 12px 0; }
+nav, .operations { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
+button { font: inherit; padding: 7px 12px; border: 1px solid #b8ccbd; border-radius: 7px; background: #fff; color: #245846; cursor: pointer; }
+button:hover { background: #dbece1; }
+.primary, .secondary { margin: 18px 0; }
+.primary { --dme-min-height: 440px; }
+.secondary { --dme-min-height: 300px; --dme-font-size: 12px; --dme-gap-x: 28px; --dme-gap-y: 12px; --dme-root-background: #5b4b84; --dme-link-color: #b7a5d6; }
+.dark { --dme-background: #15251e; --dme-text-color: #deeee2; --dme-node-background: #254333; --dme-node-border: 1px solid #456e55; --dme-root-background: #89c9a3; --dme-root-color: #102a1b; --dme-link-color: #70a283; }
+.spacious { --dme-collapse-size: 28px; --dme-collapse-gap: 10px; --dme-font-size: 19px; --dme-gap-x: 70px; --dme-gap-y: 30px; --dme-node-padding: 16px 22px; --dme-node-border: 3px solid #73a68a; }
+#status { min-height: 20px; color: #a32e36; }
+details { margin: 16px 0; padding: 16px; background: white; border-radius: 10px; }
+details textarea { display: block; width: 100%; min-height: 200px; }
+pre { overflow: auto; max-height: 240px; }

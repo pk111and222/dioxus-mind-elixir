@@ -1,0 +1,97 @@
+name: Rust core and plugins
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy -p dioxus-mind-elixir --all-targets --locked -- -D warnings
+      - run: cargo test -p dioxus-mind-elixir --locked
+      - run: cargo test -p mind-elixir-core-tests --locked
+      - run: cargo test -p mind-elixir-plugin-tests --locked
+      - run: cargo clippy -p mind-elixir-plugin-e2e --all-targets --locked -- -D warnings
+      - run: cargo clippy -p mind-elixir-core-e2e --all-targets --locked -- -D warnings
+      - run: cargo doc -p dioxus-mind-elixir --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Verify library resources are included
+        run: cargo package -p dioxus-mind-elixir --list --locked
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p mind-elixir-playground --features web --target wasm32-unknown-unknown --locked -- -D warnings
+      - run: cargo clippy -p mind-elixir-core-tests --features web --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
+      - run: cargo clippy -p mind-elixir-plugin-tests --features web --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
+
+  desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -p mind-elixir-playground --features desktop --all-targets --locked -- -D warnings
+      - run: cargo clippy -p mind-elixir-core-tests --features desktop --all-targets --locked -- -D warnings
+      - run: cargo clippy -p mind-elixir-plugin-tests --features desktop --all-targets --locked -- -D warnings
+
+  msrv:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check -p dioxus-mind-elixir --locked
+      - run: cargo check -p mind-elixir-core-tests --features desktop --locked
+      - run: cargo check -p mind-elixir-core-tests --features web --target wasm32-unknown-unknown --locked
+      - run: cargo check -p mind-elixir-core-e2e --locked
+      - run: cargo check -p mind-elixir-plugin-e2e --locked
+      - run: cargo check -p mind-elixir-plugin-tests --features desktop --locked
+      - run: cargo check -p mind-elixir-plugin-tests --features web --target wasm32-unknown-unknown --locked
+      - run: cargo check -p mind-elixir-playground --features desktop --locked
+      - run: cargo check -p mind-elixir-playground --features web --target wasm32-unknown-unknown --locked
+
+  core-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          install-chromedriver: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: dioxus-cli@0.7.10
+      - run: chromedriver --port=9515 > /tmp/chromedriver.log 2>&1 &
+      - run: scripts/test-core-e2e
+      - run: scripts/test-plugins-e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: |
+            target/core-e2e
+            target/plugins-e2e

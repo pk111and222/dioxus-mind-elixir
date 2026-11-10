@@ -1,0 +1,6 @@
+[application]
+name = "mind-elixir-core-tests"
+default_platform = "web"
+
+[web.app]
+title = "Dioxus Mind Elixir · Rust 脑图组件"
