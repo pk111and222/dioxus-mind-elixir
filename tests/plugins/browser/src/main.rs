@@ -27,7 +27,11 @@ impl Driver {
         let capabilities = if browser == "safari" {
             json!({"browserName":"safari"})
         } else {
-            json!({"browserName":"chrome","goog:chromeOptions":{"args":["--headless=new","--window-size=1600,1100","--disable-gpu","--no-sandbox"]}})
+            let mut options = json!({"args":["--headless=new","--window-size=1600,1100","--disable-gpu","--no-sandbox"]});
+            if let Ok(binary) = std::env::var("DME_CHROME_BINARY") {
+                options["binary"] = json!(binary);
+            }
+            json!({"browserName":"chrome","goog:chromeOptions":options})
         };
         let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
         let response: Value = client

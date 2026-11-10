@@ -80,12 +80,20 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: browser-actions/setup-chrome@v1
+        id: chrome
         with:
           install-chromedriver: true
       - uses: taiki-e/install-action@v2
         with:
           tool: dioxus-cli@0.7.10
-      - run: chromedriver --port=9515 > /tmp/chromedriver.log 2>&1 &
+      - name: Start matching ChromeDriver
+        env:
+          CHROMEDRIVER_PATH: ${{ steps.chrome.outputs.chromedriver-path }}
+        run: '"$CHROMEDRIVER_PATH" --port=9515 > /tmp/chromedriver.log 2>&1 &'
+      - name: Select installed Chrome
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: echo "DME_CHROME_BINARY=$CHROME_PATH" >> "$GITHUB_ENV"
       - run: scripts/test-core-e2e
       - run: scripts/test-plugins-e2e
       - uses: actions/upload-artifact@v4

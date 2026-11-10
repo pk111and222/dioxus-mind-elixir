@@ -70,7 +70,8 @@ scripts/test-plugins-e2e
 The scripts start and clean up the matching visual app. The Rust runners use W3C
 WebDriver without execute-script or handwritten JS/TS. Connect to an existing app
 by setting `DME_APP_URL`; other options are `DME_WEBDRIVER_URL`, `DME_BROWSER`
-and `DME_E2E_ARTIFACTS`. Results, screenshots and actual exported files are written
+and `DME_E2E_ARTIFACTS`. Set `DME_CHROME_BINARY` to select the Chrome executable
+that matches ChromeDriver (CI uses the setup action output). Results, screenshots and actual exported files are written
 to `target/core-e2e` or `target/plugins-e2e`; failures return a nonzero exit code.
 
 脚本启动并清理对应测试应用；Rust 驱动不执行手写 JS/TS。设置 `DME_APP_URL` 可连接已有应用，
