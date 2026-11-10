@@ -27,7 +27,9 @@ if [ -z "${DME_APP_URL:-}" ]; then
             cat target/plugins-e2e/server.log >&2
             exit 1
         fi
-        if curl --fail --silent "$DME_APP_URL" >/dev/null 2>&1; then
+        # Dioxus streams an HTTP 200 loading page until the build is ready.
+        # A browser navigation must wait for a complete HTML response.
+        if curl --fail --silent --max-time 2 --header 'Accept: text/html' "$DME_APP_URL" >/dev/null 2>&1; then
             DME_READY=1
             break
         fi

@@ -67,14 +67,17 @@ scripts/test-core-e2e
 scripts/test-plugins-e2e
 ```
 
-The scripts start and clean up the matching visual app. The Rust runners use W3C
+The scripts wait for Dioxus to finish building, then start the browser checks and
+clean up the matching visual app. Test HTML uses local resources to avoid external
+font requests during navigation. The Rust runners use W3C
 WebDriver without execute-script or handwritten JS/TS. Connect to an existing app
 by setting `DME_APP_URL`; other options are `DME_WEBDRIVER_URL`, `DME_BROWSER`
 and `DME_E2E_ARTIFACTS`. Set `DME_CHROME_BINARY` to select the Chrome executable
 that matches ChromeDriver (CI uses the setup action output). Results, screenshots and actual exported files are written
 to `target/core-e2e` or `target/plugins-e2e`; failures return a nonzero exit code.
 
-脚本启动并清理对应测试应用；Rust 驱动不执行手写 JS/TS。设置 `DME_APP_URL` 可连接已有应用，
+脚本等待 Dioxus 构建就绪后启动浏览器检查，并清理对应测试应用；测试页面使用本地资源，避免导航依赖外部字体。
+Rust 驱动不执行手写 JS/TS。设置 `DME_APP_URL` 可连接已有应用，
 其余选项为 `DME_WEBDRIVER_URL`、`DME_BROWSER`、`DME_E2E_ARTIFACTS`。
 结果、截图与实际导出文件写入 `target/core-e2e` 或 `target/plugins-e2e`；失败返回非零状态。
 

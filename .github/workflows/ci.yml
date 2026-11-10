@@ -96,6 +96,10 @@ jobs:
         run: echo "DME_CHROME_BINARY=$CHROME_PATH" >> "$GITHUB_ENV"
       - run: scripts/test-core-e2e
       - run: scripts/test-plugins-e2e
+        if: ${{ !cancelled() }}
+      - name: Collect ChromeDriver log
+        if: always()
+        run: cp /tmp/chromedriver.log target/chromedriver.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -103,3 +107,4 @@ jobs:
           path: |
             target/core-e2e
             target/plugins-e2e
+            target/chromedriver.log
