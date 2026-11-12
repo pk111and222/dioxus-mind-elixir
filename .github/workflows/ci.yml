@@ -1,7 +1,11 @@
 name: Rust core and plugins
+# main runs this through release.yml (CI must pass before a release); the release branch only
+# receives already-tested commits.
 on:
   push:
+    branches-ignore: [main, release]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

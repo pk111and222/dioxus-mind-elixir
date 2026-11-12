@@ -1,0 +1,195 @@
+name: Release
+
+# Every push to main (a merged pull request) releases a new version:
+#   1. run the full CI workflow;
+#   2. decide the version (scripts/release-version plan):
+#        - the merged branch changed `version` in Cargo.toml  -> release that version;
+#        - Cargo.toml still names an unreleased version          -> release it;
+#        - otherwise                                             -> previous release + 1 patch;
+#   3. commit the version (and dated CHANGELOG heading) on top of the merged main commit, tag it
+#      vX.Y.Z and push that commit to the `release` branch (main itself is never rewritten);
+#   4. publish the tag to crates.io and create the GitHub release.
+# The release branch and tags are pushed with the RELEASE_DEPLOY_KEY deploy key (the only actor
+# allowed to update `release`); that push starts pages.yml, which deploys the playground.
+# Re-running a failed run reuses the tag it created and skips the steps that already succeeded.
+# Manual runs may pass an explicit version.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (X.Y.Z); leave empty to decide automatically
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CRATE: dioxus-mind-elixir
+  RELEASE_BRANCH: release
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  prepare:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Read published versions from crates.io
+        run: |
+          set -euo pipefail
+          # Sparse index: one JSON line per published version (yanked versions cannot be reused either).
+          status=$(curl -sS -o index.jsonl -w '%{http_code}' "https://index.crates.io/di/ox/${CRATE}")
+          case "$status" in
+            200) jq -r '.vers' index.jsonl | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V > published.txt ;;
+            404) : > published.txt ;;
+            *) echo "::error::crates.io index returned HTTP $status"; exit 1 ;;
+          esac
+          rm -f index.jsonl
+          echo "Published: $(tr '\n' ' ' < published.txt)"
+
+      - name: Decide version
+        id: plan
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          latest=$(tail -n1 published.txt)
+          version=$(scripts/release-version plan "$BEFORE" "$GITHUB_SHA" "$latest" "$REQUESTED")
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Release $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create release commit and tag
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists; reusing it."
+            exit 0
+          fi
+          scripts/release-version apply "$VERSION"
+          # Only the workspace's own lock entries change; dependencies stay as locked.
+          cargo update --workspace
+          cargo publish -p "$CRATE" --dry-run --locked --allow-dirty
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "release: $TAG" -m "Source: $GITHUB_SHA"
+          git tag -a "$TAG" -m "$CRATE $VERSION"
+
+      - name: Use the release deploy key for pushing
+        env:
+          DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEPLOY_KEY" ]]; then
+            echo "::error::Add a RELEASE_DEPLOY_KEY repository secret (private key of a deploy key with write access)."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/release_key
+          chmod 600 ~/.ssh/release_key
+          ssh-keyscan -t ed25519,rsa,ecdsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+          # Reads keep using the checkout token; only pushes go through the deploy key.
+          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/release_key -o IdentitiesOnly=yes" >> "$GITHUB_ENV"
+
+      - name: Push tag and release branch
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          commit=$(git rev-parse "$TAG^{commit}")
+          current=$(git ls-remote --heads origin "refs/heads/$RELEASE_BRANCH" | cut -f1)
+          if [[ "$current" == "$commit" ]]; then
+            echo "$RELEASE_BRANCH already points to $TAG"
+            git push origin "refs/tags/$TAG"
+            exit 0
+          fi
+          if [[ -n "$current" ]]; then
+            git fetch origin "refs/heads/$RELEASE_BRANCH"
+            # A later release already moved the branch on: never move it back.
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$current"; then
+              echo "$RELEASE_BRANCH is already at a newer release"
+              git push origin "refs/tags/$TAG"
+              exit 0
+            fi
+          fi
+          # The release branch is main + one release commit; it is replaced on every release
+          # (older releases stay reachable through their tags).
+          git push --atomic --force-with-lease="refs/heads/$RELEASE_BRANCH:$current" origin \
+            "$commit:refs/heads/$RELEASE_BRANCH" "refs/tags/$TAG"
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Checked again here so that re-running this job after a later step failed is safe.
+          if curl -fsS "https://index.crates.io/di/ox/${CRATE}" | jq -e --arg v "$VERSION" 'select(.vers == $v)' >/dev/null; then
+            echo "$CRATE $VERSION is already on crates.io"
+            exit 0
+          fi
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo "::error::Add a CARGO_REGISTRY_TOKEN repository secret (crates.io token with the publish-update scope)."
+            exit 1
+          fi
+          cargo publish -p "$CRATE" --locked
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release $TAG already exists"
+            exit 0
+          fi
+          scripts/release-version notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          if [[ -s "$RUNNER_TEMP/notes.md" ]]; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi

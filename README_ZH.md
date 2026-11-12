@@ -194,7 +194,7 @@ scripts/build-pages /dioxus-mind-elixir/
 
 完整部署 **`dist/pages/`**。自定义域名或用户站点的构建参数用 `/`。页面包含中英文、显著的 Mind Elixir 来源及官网/GitHub 链接、编辑、共享大纲、主题与下载。`?lang=zh` 直接打开中文，切换语言保留文档。编辑保存在内存中，刷新前请下载 JSON。
 
-已提供 [GitHub Pages 工作流](.github/workflows/pages.yml)。在仓库 **Settings → Pages** 选择 **GitHub Actions**，然后推送 `main` 或手动运行。工作流自动读取托管路径；默认分支不是 `main` 时需调整触发分支。静态页面需通过 HTTP(S) 访问，不能用 `file://` 加载 WASM。
+已提供 [GitHub Pages 工作流](.github/workflows/pages.yml)。在仓库 **Settings → Pages** 选择 **GitHub Actions**。每次发版会用新标签部署演示页；推送 `release` 分支或手动运行工作流也会部署。工作流自动读取托管路径。静态页面需通过 HTTP(S) 访问，不能用 `file://` 加载 WASM。
 
 ## 仓库结构
 
@@ -226,6 +226,30 @@ cargo doc -p dioxus-mind-elixir --no-deps --locked
 ```
 
 核心、插件的独立测试应用及 Rust 浏览器驱动统一放在 `tests/`，运行方式见[测试说明](tests/README.md)。项目禁止 unsafe Rust，生产代码的 Clippy 检查禁止 `unwrap`、`expect`、`panic`。
+
+### 发版
+
+合并到 `main` 后自动发版（[发版工作流](.github/workflows/release.yml)）：
+
+1. 先完整跑一遍 CI，失败就不发版。
+2. 由 [`scripts/release-version`](scripts/release-version) 决定版本号：
+   - 合进来的分支改了 `Cargo.toml` 的 `version`，就用分支的版本；
+   - `Cargo.toml` 里的版本还没发布过，就用它；
+   - 否则在最近一次发布（标签或 crates.io）的基础上把小版本加 1。
+   
+   无论哪种，版本号都必须比已发布的都新。
+3. 在合并提交之上加一个 `release: vX.Y.Z` 提交（包含版本号、`Cargo.lock` 和带日期的 `CHANGELOG.md` 标题），打标签 `vX.Y.Z`，推送到 **`release`** 分支。`main` 本身不会被改写。
+4. 用这个标签发布到 crates.io，按 `CHANGELOG.md` 里对应的一节创建 GitHub Release，并部署演示页。
+
+改动写在 `CHANGELOG.md` 的 `## X.Y.Z — unreleased`（或 `## Unreleased`）下。
+
+工作流可以重跑：已有的标签、crates.io 版本和 GitHub Release 会沿用。手动 **Run workflow** 时可以指定版本号。
+
+需要的设置：
+- 仓库 Secret `CARGO_REGISTRY_TOKEN`：crates.io 令牌，需有 publish-update 权限。
+- **Settings → Actions → Workflow permissions** 设为可读写。
+- 部署密钥：在 Deploy keys 里添加一把有写权限的密钥，私钥存为 Secret `RELEASE_DEPLOY_KEY`。工作流用它推送 `release` 分支和标签，这次推送也会触发演示页部署。
+- 可以给 `release` 加分支规则（Rulesets），限制更新、删除和强制推送，并把 **Deploy keys** 放进放行名单，这样只有工作流能更新它。
 
 已做 Chromium 回归与 macOS 运行/人工检查；Safari、Windows/Linux Desktop、真实 OS 输入法候选确认与商业 XMind 应用打开检查仍待验证，详见[兼容说明](docs/compatibility.md)。
 
