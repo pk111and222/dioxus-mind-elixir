@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## 0.2.0 — 2026-11-12
 
 - **Breaking:** `Locale` is replaced by `plugins::Labels`, a struct of every text the components show
   (commands, accessible names, hints, the topic of new nodes). It defaults to English; hosts pass
