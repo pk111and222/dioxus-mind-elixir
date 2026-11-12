@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.1 — 2026-11-12
 
 - Node pictures: `Node.image` (`NodeImage { url, width, height, alt }`), rendered above the topic with a
   host `image_url` resolver, a visible fallback when loading fails, and `Operation::SetImage`.
