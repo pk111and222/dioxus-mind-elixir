@@ -194,7 +194,7 @@ scripts/build-pages /dioxus-mind-elixir/
 
 完整部署 **`dist/pages/`**。自定义域名或用户站点的构建参数用 `/`。页面包含中英文、显著的 Mind Elixir 来源及官网/GitHub 链接、编辑、共享大纲、主题与下载。`?lang=zh` 直接打开中文，切换语言保留文档。编辑保存在内存中，刷新前请下载 JSON。
 
-已提供 [GitHub Pages 工作流](.github/workflows/pages.yml)。在仓库 **Settings → Pages** 选择 **GitHub Actions**。每次发版会用新标签部署演示页；推送 `release` 分支或手动运行工作流也会部署。工作流自动读取托管路径。静态页面需通过 HTTP(S) 访问，不能用 `file://` 加载 WASM。
+已提供 [GitHub Pages 工作流](.github/workflows/pages.yml)。在仓库 **Settings → Pages** 选择 **GitHub Actions**。每次发版会用新标签部署演示页；手动运行工作流可以重新部署（可指定 `release` 分支或某个标签）。工作流自动读取托管路径。静态页面需通过 HTTP(S) 访问，不能用 `file://` 加载 WASM。
 
 ## 仓库结构
 
@@ -248,8 +248,7 @@ cargo doc -p dioxus-mind-elixir --no-deps --locked
 需要的设置：
 - 仓库 Secret `CARGO_REGISTRY_TOKEN`：crates.io 令牌，需有 publish-update 权限。
 - **Settings → Actions → Workflow permissions** 设为可读写。
-- 部署密钥：在 Deploy keys 里添加一把有写权限的密钥，私钥存为 Secret `RELEASE_DEPLOY_KEY`。工作流用它推送 `release` 分支和标签，这次推送也会触发演示页部署。
-- 可以给 `release` 加分支规则（Rulesets），限制更新、删除和强制推送，并把 **Deploy keys** 放进放行名单，这样只有工作流能更新它。
+- `release` 分支每次发版都会被工作流整体替换，不要手动往上提交。
 
 已做 Chromium 回归与 macOS 运行/人工检查；Safari、Windows/Linux Desktop、真实 OS 输入法候选确认与商业 XMind 应用打开检查仍待验证，详见[兼容说明](docs/compatibility.md)。
 
