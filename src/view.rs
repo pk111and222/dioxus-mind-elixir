@@ -1058,10 +1058,13 @@ fn TopicEditor(session: EditSession) -> Element {
             context.report(handle.cancel_pending());
         }
     };
-    let (rows, width) = editor_size(&draft.read());
+    // The editor re-renders as it grows, so its value must follow the draft;
+    // rendering the original text again would discard what was typed.
+    let text = draft.read().clone();
+    let (rows, width) = editor_size(&text);
     rsx! {
-        textarea { class: "dme-editor", autofocus: true, aria_label: "{context.labels.read().edit_topic}", rows: "{rows}", value: session.original,
-     style: "--dme-editor-width:{width}em",
+        textarea { class: "dme-editor", autofocus: true, aria_label: "{context.labels.read().edit_topic}", rows: "{rows}", value: "{text}",
+            style: "--dme-editor-width:{width}em",
             onmounted: move |event| async move {
                 if let Err(error) = event.data().set_focus(true).await {
                     // Dioxus Desktop 0.7.10 returns null for successful focus.
