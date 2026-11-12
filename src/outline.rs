@@ -1,6 +1,6 @@
 use crate::{
     MindMapError, MindMapHandle, Node, Operation, Placement, STYLESHEET,
-    plugins::{self, Capability, Command, Locale},
+    plugins::{self, Capability, Command, Labels},
 };
 use dioxus::prelude::*;
 use std::collections::BTreeSet;
@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 #[component]
 pub fn Outline(
     handle: MindMapHandle,
-    #[props(default)] locale: Locale,
+    #[props(default)] labels: Labels,
     #[props(default)] class: String,
     #[props(default)] style: String,
     #[props(default)] on_error: EventHandler<MindMapError>,
@@ -64,13 +64,13 @@ pub fn Outline(
     flatten(&root, 0, &mut rows, &hidden.read());
     rsx! {
         style {"{STYLESHEET}"}
-        section {class:"dme-outline {class}", style, aria_label: if locale == Locale::Zh {"大纲"} else {"Outline"},
-            nav {class:"dme-breadcrumbs", aria_label: if locale == Locale::Zh {"路径"} else {"Breadcrumbs"},
+        section {class:"dme-outline {class}", style, aria_label: "{labels.outline}",
+            nav {class:"dme-breadcrumbs", aria_label: "{labels.breadcrumbs}",
                 for crumb in crumbs { button {r#type:"button", onclick:move |_| focus.set(Some(crumb.id.clone())), "{crumb.topic}"} }
             }
             div {role:"tree",
                 for (node,depth) in rows {
-                    OutlineRow {key:"{node.id}", selected:selection.contains(&node.id), node, depth, handle, locale, focus, dragging, hidden, on_error, blur_commits}
+                    OutlineRow {key:"{node.id}", selected:selection.contains(&node.id), node, depth, handle, labels: labels.clone(), focus, dragging, hidden, on_error, blur_commits}
                 }
             }
         }
@@ -82,7 +82,7 @@ fn OutlineRow(
     depth: usize,
     selected: bool,
     handle: MindMapHandle,
-    locale: Locale,
+    labels: Labels,
     mut focus: Signal<Option<String>>,
     mut dragging: Signal<Option<String>>,
     mut hidden: Signal<BTreeSet<String>>,
@@ -90,13 +90,14 @@ fn OutlineRow(
     blur_commits: bool,
 ) -> Element {
     let owner = dioxus::core::current_scope_id().0;
+    let new_topic = labels.new_topic.clone();
     let mut editing = use_signal(|| false);
     let mut draft = use_signal(|| node.topic.clone());
     let mut composing = use_signal(|| false);
     let mut ended = use_signal(|| false);
     let mut focused = use_signal(|| false);
     let is_hidden = hidden.read().contains(&node.id);
-    let mut edit_revision = use_signal(|| None::<u64>);
+    let mut edit_topic = use_signal(|| None::<String>);
     let cancel_id = node.id.clone();
     let watch_id = node.id.clone();
     let cancel = use_callback(move |_: ()| {
@@ -106,13 +107,15 @@ fn OutlineRow(
             }
         }
     });
-    use_effect(move || {
-        if editing()
-            && !matches!((handle.revision(), *edit_revision.read()), (Ok(current),Some(start)) if current==start)
-        {
+    // Selection changes bump the revision; only a change to this node's own text
+    // (undo, another view) ends the edit.
+    let watch_topic = node.topic.clone();
+    use_effect(use_reactive((&watch_topic,), move |(topic,)| {
+        let started = edit_topic.peek().clone();
+        if *editing.peek() && started.as_deref().is_some_and(|t| t != topic) {
             editing.set(false);
         }
-    });
+    }));
     use_effect(move || {
         if editing()
             && (!matches!(handle.owns_editor(owner), Ok(true))
@@ -142,7 +145,7 @@ fn OutlineRow(
             }
             handle.select(std::slice::from_ref(&edit_node.id))?;
             handle.begin_edit(owner, &edit_node.id, &edit_node.topic)?;
-            edit_revision.set(Some(handle.revision()?));
+            edit_topic.set(Some(edit_node.topic.clone()));
             draft.set(edit_node.topic.clone());
             editing.set(true);
             Ok(())
@@ -172,14 +175,14 @@ fn OutlineRow(
                     Key::Enter if event.modifiers().shift()=>Some(Command::SiblingBefore),Key::Enter=>Some(Command::SiblingAfter),
                     Key::Delete|Key::Backspace=>Some(Command::Delete),_=>None,
                 };
-                if let Some(command)=command {event.prevent_default();report((||{handle.select(std::slice::from_ref(&key_node.id))?;plugins::execute(handle,command,locale)})());}
+                if let Some(command)=command {event.prevent_default();report((||{handle.select(std::slice::from_ref(&key_node.id))?;plugins::execute(handle,command,&new_topic)})());}
             },
             button {class:"dme-outline-fold",r#type:"button",disabled:node.children.is_empty(), aria_expanded:!is_hidden,
-                aria_label:if locale==Locale::Zh {"显示或隐藏大纲子节点"} else {"Toggle outline children"},
+                aria_label:"{labels.toggle_children}",
                 onclick:move |event| {event.stop_propagation();if is_hidden {hidden.write().remove(&toggle_id);} else {hidden.write().insert(toggle_id.clone());}}, if is_hidden {"▸"} else {"▾"}
             }
             if editing() {
-                textarea {class:"dme-outline-editor", rows:"2", aria_label:if locale==Locale::Zh {"编辑大纲节点"} else {"Edit outline node"},value:node.topic.clone(),autofocus:true,
+                textarea {class:"dme-outline-editor", rows:"2", aria_label:"{labels.edit_topic}",value:node.topic.clone(),autofocus:true,
                     onmounted:move |event| async move {if let Err(error)=event.data().set_focus(true).await {if !*focused.peek() {on_error.call(MindMapError::Measurement(error.to_string()));}}},
                     onfocus:move |_| focused.set(true),
                     oninput:move |event| {let value=event.value(); handle.update_draft(owner, value.clone()); draft.set(value);},
@@ -196,10 +199,10 @@ fn OutlineRow(
                     }
                 }
             } else {span {class:"dme-outline-label", "{node.topic}"}
-                if node.image.is_some() {span {class:"dme-outline-badge", "data-badge":"image", aria_label:if locale==Locale::Zh {"有配图"} else {"Has image"}}}
-                if node.note.is_some() {span {class:"dme-outline-badge", "data-badge":"note", aria_label:if locale==Locale::Zh {"有备注"} else {"Has note"}}}
+                if node.image.is_some() {span {class:"dme-outline-badge", "data-badge":"image", aria_label:"{labels.has_image}"}}
+                if node.note.is_some() {span {class:"dme-outline-badge", "data-badge":"note", aria_label:"{labels.has_note}"}}
             }
-            button {class:"dme-outline-action",r#type:"button",title:if locale==Locale::Zh {"聚焦此分支"} else {"Focus branch"},onclick:move |event| {event.stop_propagation();focus.set(Some(fold_id.clone()));},"↗"}
+            button {class:"dme-outline-action",r#type:"button",title:"{labels.focus_branch}",onclick:move |event| {event.stop_propagation();focus.set(Some(fold_id.clone()));},"↗"}
         }
 
     }
@@ -209,7 +212,7 @@ fn OutlineRow(
 #[component]
 pub fn Toolbar(
     handle: MindMapHandle,
-    #[props(default)] locale: Locale,
+    #[props(default)] labels: Labels,
     #[props(default)] class: String,
     #[props(default)] style: String,
     #[props(default)] on_error: EventHandler<MindMapError>,
@@ -221,7 +224,7 @@ pub fn Toolbar(
         Ok(commands) => commands,
         Err(error) => return rsx! {p{role:"alert","{error}"}},
     };
-    rsx! { style {"{STYLESHEET}"} div {class:"dme-toolbar {class}",style,role:"toolbar", aria_label:if locale==Locale::Zh {"脑图工具栏"} else {"Mind map toolbar"},
-        for command in commands {button {r#type:"button", disabled:matches!(handle.is_read_only(),Ok(true)), onclick:move |_| {if let Err(error)=plugins::execute(handle,command,locale){on_error.call(error);}},"{locale.label(command)}"}}
+    rsx! { style {"{STYLESHEET}"} div {class:"dme-toolbar {class}",style,role:"toolbar", aria_label:"{labels.toolbar}",
+        for command in commands {button {r#type:"button", disabled:matches!(handle.is_read_only(),Ok(true)), onclick:{let topic=labels.new_topic.clone(); move |_| {if let Err(error)=plugins::execute(handle,command,&topic){on_error.call(error);}}},"{labels.command(command)}"}}
     }}
 }

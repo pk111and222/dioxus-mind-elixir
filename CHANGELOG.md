@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 — unreleased
+
+- **Breaking:** `Locale` is replaced by `plugins::Labels`, a struct of every text the components show
+  (commands, accessible names, hints, the topic of new nodes). It defaults to English; hosts pass
+  `labels` to `EditableMindMap`, `Outline` and `Toolbar` to change any of them. The component no
+  longer ships Chinese text. `plugins::execute` and `plugins::command_operation` take the topic of
+  new nodes instead of a locale.
+- Fixed: editing a node and then clicking elsewhere failed with "The document changed during the
+  operation" (the click's selection change invalidated the draft). Only changes to the edited node
+  itself now close the editor; the outline editor behaves the same way.
+- The inline topic editor sits in the node and grows with its text (transparent, no border or resize
+  handle by default); `--dme-editor-width`, `--dme-editor-caret` and `--dme-editing-outline`.
+- Branches expose their effective color as `--dme-branch-color` (the node's `branch_color`, else the
+  theme palette color of its main branch).
+
 ## 0.1.1 — unreleased
 
 - Node pictures: `Node.image` (`NodeImage { url, width, height, alt }`), rendered above the topic with a

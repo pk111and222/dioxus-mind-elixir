@@ -55,16 +55,20 @@ Dioxus 的 resize 观察覆盖节点、子容器、分支和画布，布局大�
 | `--dme-collapse-radius` | 50%，按钮圆角 |
 | `--dme-collapse-background` | 继承画布背景（缺省 #f8faf7），遮住按钮下面的连线 |
 | `--dme-collapse-color` | 继承 node-color/text-color（缺省 #245846），加减号颜色 |
-| `--dme-editor-resize` | both，编辑区 resize |
-| `--dme-editor-min-width` | 160px，编辑区最小宽度 |
-| `--dme-editor-max-width` | 400px，编辑区最大宽度 |
-| `--dme-editor-min-height` | 72px，编辑区最小高度 |
-| `--dme-editor-padding` | 4px，编辑区留白 |
-| `--dme-editor-border` | 1px solid #388c69，编辑区边框 |
-| `--dme-editor-radius` | 4px，编辑区圆角 |
+| `--dme-editor-resize` | none，编辑框 resize |
+| `--dme-editor-min-width` | 2em，编辑框最小宽度 |
+| `--dme-editor-max-width` | 同 `--dme-node-max-width`，编辑框最大宽度 |
+| `--dme-editor-min-height` | 0，编辑框最小高度 |
+| `--dme-editor-padding` | 0，编辑框留白（编辑框嵌在节点里，沿用节点留白） |
+| `--dme-editor-border` | 0，编辑框边框 |
+| `--dme-editor-radius` | 0，编辑框圆角 |
 | `--dme-editor-outline` | none，编辑区外框 |
-| `--dme-editor-background` | #fff，编辑背景 |
-| `--dme-editor-color` | #263b36，编辑文字 |
+| `--dme-editor-background` | transparent，编辑背景（透出节点背景） |
+| `--dme-editor-color` | inherit，编辑文字 |
+| `--dme-editor-width` | 组件按文字长度设置，编辑框宽度 |
+| `--dme-editor-caret` | currentColor，光标颜色 |
+| `--dme-editing-outline` | 同 `--dme-selected-outline`，正在编辑的节点外框 |
+| `--dme-branch-color` | 由组件设在每条分支上：节点自己的 `branch_color`，否则主题 `palette` 里主分支的颜色；可用于节点边框、文字等 |
 
 compact 下 gap-x/gap-y 缺省为 24px/10px；宿主显式变量覆盖仍优先。`Theme::set_variable` 仅接受单个 CSS 值，拒绝分号/花括号；不提供双份 Rust 几何常量。显式 theme 比祖先继承优先，组件 style 可再覆盖 theme；省略 theme 时保留纯外部 CSS 定制路径。
 

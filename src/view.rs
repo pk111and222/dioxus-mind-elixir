@@ -1,5 +1,5 @@
 use crate::plugins::{
-    self, Capability, Command, Locale,
+    self, Capability, Command, Labels,
     gesture::{self, HitRect},
 };
 use crate::{
@@ -83,7 +83,7 @@ pub fn EditableMindMap(
     #[props(default)] viewport: Option<Signal<Viewport>>,
     #[props(default)] center_revision: u64,
     #[props(default)] on_error: EventHandler<MindMapError>,
-    #[props(default)] locale: Locale,
+    #[props(default)] labels: Labels,
     #[props(default)] fit_revision: u64,
     #[props(default)] image_url: Option<Callback<String, String>>,
     #[props(default)] blur_commits: bool,
@@ -91,7 +91,7 @@ pub fn EditableMindMap(
     let document = handle.document();
     match document {
         Ok(document) => {
-            rsx! { MapBody { document, handle: Some(handle), locale, class, style, measurement_revision, alignment, theme, viewport_control: viewport, center_revision, on_error, fit_revision, image_url, blur_commits } }
+            rsx! { MapBody { document, handle: Some(handle), labels, class, style, measurement_revision, alignment, theme, viewport_control: viewport, center_revision, on_error, fit_revision, image_url, blur_commits } }
         }
         Err(error) => rsx! { p { role: "alert", "{error}" } },
     }
@@ -121,7 +121,7 @@ struct ViewContext {
     view_id: usize,
     gesture: Signal<Option<NodeDrag>>,
     menu: Signal<Option<Point>>,
-    locale: Locale,
+    labels: Signal<Labels>,
     suppress_click: Signal<bool>,
     gesture_epoch: Signal<u64>,
     image_url: Option<Callback<String, String>>,
@@ -195,7 +195,7 @@ impl ViewContext {
                 if handle.selection()?.is_empty() {
                     handle.select(std::slice::from_ref(&node.id))?;
                 }
-                plugins::execute(handle, command, self.locale)
+                plugins::execute(handle, command, &self.labels.peek().new_topic)
             })());
         } else if matches!(
             event.key(),
@@ -280,7 +280,7 @@ fn MapBody(
     #[props(default)] viewport_control: Option<Signal<Viewport>>,
     #[props(default)] center_revision: u64,
     on_error: EventHandler<MindMapError>,
-    #[props(default)] locale: Locale,
+    #[props(default)] labels: Labels,
     #[props(default)] fit_revision: u64,
     #[props(default)] image_url: Option<Callback<String, String>>,
     #[props(default)] blur_commits: bool,
@@ -295,6 +295,10 @@ fn MapBody(
     let mut menu = use_signal(|| None::<Point>);
     let suppress_click = use_signal(|| false);
     let mut gesture_epoch = use_signal(|| 0u64);
+    let mut label_signal = use_signal(|| labels.clone());
+    if *label_signal.peek() != labels {
+        label_signal.set(labels.clone());
+    }
     let context = ViewContext {
         mounts,
         resize,
@@ -304,7 +308,7 @@ fn MapBody(
         view_id: dioxus::core::current_scope_id().0,
         gesture,
         menu,
-        locale,
+        labels: label_signal,
         suppress_click,
         gesture_epoch,
         image_url,
@@ -528,8 +532,8 @@ fn MapBody(
         .await;
         context.report(result);
     });
-    // Deleting/replacing the edited node, or changing it elsewhere, cancels this
-    // view's draft. No stale asynchronous result may restore that editor.
+    // Deleting/replacing the edited node, or changing its text elsewhere, cancels
+    // this view's draft. Selection changes (which bump the revision) do not.
     use_effect(move || {
         let current = input.read();
         let session = context.editor.read().clone();
@@ -542,8 +546,6 @@ fn MapBody(
             let writable = match handle {
                 Some(handle) => {
                     matches!(handle.is_read_only(), Ok(false))
-                        && matches!(handle.owns_editor(context.view_id), Ok(true))
-                        && matches!(handle.revision(), Ok(revision) if revision == session.revision)
                         && handle.edits(context.view_id, &session.id)
                 }
                 None => false,
@@ -614,7 +616,7 @@ fn MapBody(
         style { "{STYLESHEET}" }
         div {
             class: "dme-map {class}", style,
-            role: "group", aria_label: "Mind map", tabindex: "0",
+            role: "group", aria_label: "{label_signal.read().map}", tabindex: "0",
             "data-layout": direction, "data-alignment": align, "data-compact": document.compact,
             onmounted: move |event| container.set(Some(event.data())),
             onwheel: move |event| {
@@ -729,35 +731,35 @@ fn MapBody(
                         div { class: "dme-root", TopicView { key: "{root.id}", node: root.clone(), root: true, selected: selection.contains(&root.id) } }
                         if root.expanded {
                             div { class: "dme-main dme-down",
-                                for child in &root.children { NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Down, selection: selection.clone() } }
+                                for (index, child) in root.children.iter().enumerate() { NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Down, selection: selection.clone(), color: palette_color(theme.as_ref(), index) } }
                             }
                         }
                     } else {
                         div { class: "dme-main dme-left",
                             if root.expanded {
-                                for child in root.children.iter().filter(|node| side(document.direction, &root.children, &node.id) == LayoutDirection::Left) {
-                                    NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Left, selection: selection.clone() }
+                                for (index, child) in root.children.iter().enumerate().filter(|(_, node)| side(document.direction, &root.children, &node.id) == LayoutDirection::Left) {
+                                    NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Left, selection: selection.clone(), color: palette_color(theme.as_ref(), index) }
                                 }
                             }
                         }
                         div { class: "dme-root", TopicView { key: "{root.id}", node: root.clone(), root: true, selected: selection.contains(&root.id) } }
                         div { class: "dme-main dme-right",
                             if root.expanded {
-                                for child in root.children.iter().filter(|node| side(document.direction, &root.children, &node.id) == LayoutDirection::Right) {
-                                    NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Right, selection: selection.clone() }
+                                for (index, child) in root.children.iter().enumerate().filter(|(_, node)| side(document.direction, &root.children, &node.id) == LayoutDirection::Right) {
+                                    NodeView { key: "{child.id}", node: child.clone(), direction: LayoutDirection::Right, selection: selection.clone(), color: palette_color(theme.as_ref(), index) }
                                 }
                             }
                         }
                     }
                 }
             }
-            GestureOverlay { gesture, locale, mounts, viewport, container, handle }
+            GestureOverlay { gesture, labels: label_signal, mounts, viewport, container, handle }
             if let (Some(at),Some(handle)) = (menu(),handle) {
                 div { class: "dme-context-menu", role: "menu", style: format!("position:fixed;left:clamp(8px,{}px,calc(100vw - var(--dme-menu-width,200px) - 8px));top:clamp(8px,{}px,40vh)",at.x,at.y),
                     onpointerdown: move |event| event.stop_propagation(),
                     match handle.plugin_commands() {
                         Ok(commands) => rsx! { for command in commands {
-                            button { r#type: "button", role: "menuitem", onclick: move |_| { menu.set(None); context.report(plugins::execute(handle,command,locale)); }, "{locale.label(command)}" }
+                            button { r#type: "button", role: "menuitem", onclick: move |_| { menu.set(None); let topic = label_signal.peek().new_topic.clone(); context.report(plugins::execute(handle,command,&topic)); }, "{label_signal.read().command(command)}" }
                         } },
                         Err(error) => rsx! { p {role: "alert", "{error}"} },
                     }
@@ -794,6 +796,12 @@ fn CanvasTransform(
     } }
 }
 
+/// Main-branch color from the theme palette, by position among the root's children.
+fn palette_color(theme: Option<&Theme>, index: usize) -> Option<String> {
+    let palette = &theme?.palette;
+    palette.get(index % palette.len().max(1)).cloned()
+}
+
 fn assigned_side(children: &[Node], id: &str) -> LayoutDirection {
     let (mut left, mut right) = (0usize, 0usize);
     for child in children {
@@ -823,19 +831,32 @@ fn side(direction: LayoutDirection, children: &[Node], id: &str) -> LayoutDirect
 }
 
 #[component]
-fn NodeView(node: Node, direction: LayoutDirection, selection: Vec<String>) -> Element {
+fn NodeView(
+    node: Node,
+    direction: LayoutDirection,
+    selection: Vec<String>,
+    #[props(default)] color: Option<String>,
+) -> Element {
     let context = use_context::<ViewContext>();
     let class = match direction {
         LayoutDirection::Left => "dme-branch dme-left",
         LayoutDirection::Down => "dme-branch dme-down",
         _ => "dme-branch dme-right",
     };
+    // Effective branch color (the node's own, else its main branch's palette
+    // color) as `--dme-branch-color`, for host styling of topics and markers.
+    let color = node
+        .branch_color
+        .clone()
+        .or(color)
+        .filter(|c| !c.contains([';', '{', '}', '"']));
+    let branch_style = color.as_ref().map(|c| format!("--dme-branch-color:{c}"));
     rsx! {
-        div { class, onresize: move |_| context.resized(),
+        div { class, style: branch_style, onresize: move |_| context.resized(),
             TopicView { key: "{node.id}", node: node.clone(), root: false, direction, selected: selection.contains(&node.id) }
             if node.expanded && !node.children.is_empty() {
                 div { class: "dme-children", onresize: move |_| context.resized(),
-                    for child in node.children { NodeView { key: "{child.id}", node: child, direction, selection: selection.clone() } }
+                    for child in node.children { NodeView { key: "{child.id}", node: child, direction, selection: selection.clone(), color: color.clone() } }
                 }
             }
         }
@@ -945,7 +966,7 @@ fn TopicView(
                 if broken.read().as_deref() == Some(src.as_str()) {
                     span { class: "dme-image-missing", role: "img", aria_label: image.alt.clone().unwrap_or_default(),
                         style: format!("width:{}px;height:{}px", image.width, image.height),
-                        if context.locale == Locale::Zh { "图片无法显示" } else { "Image unavailable" }
+                        "{context.labels.read().image_unavailable}"
                     }
                 } else {
                     img { class: "dme-image", src: "{src}", alt: image.alt.clone().unwrap_or_default(), draggable: "false",
@@ -962,7 +983,7 @@ fn TopicView(
                 }
             } else { span { class: "dme-topic-text", "{node.topic}" } }
             if has_note && !editing {
-                span { class: "dme-note-marker", aria_label: if context.locale == Locale::Zh { "有备注" } else { "Has note" }, title: if context.locale == Locale::Zh { "有备注" } else { "Has note" } }
+                span { class: "dme-note-marker", aria_label: "{context.labels.read().has_note}", title: "{context.labels.read().has_note}" }
             }
             if selected && !editing {
                 span { class: "dme-focus-marker", aria_hidden: "true",
@@ -981,7 +1002,7 @@ fn TopicView(
                 }
             }
             if !root && !editing && !node.children.is_empty() && context.handle.is_some() {
-                button { class: "dme-collapse", r#type: "button", "data-expanded": expanded, aria_expanded: expanded, aria_label: match (context.locale,expanded) {(Locale::Zh,true)=>"折叠",(Locale::Zh,false)=>"展开",(_,true)=>"Collapse",(_,false)=>"Expand"},
+                button { class: "dme-collapse", r#type: "button", "data-expanded": expanded, aria_expanded: expanded, aria_label: if expanded { context.labels.read().collapse.clone() } else { context.labels.read().expand.clone() },
                     onpointerdown: move |event| event.stop_propagation(),
                     onclick: move |event| {
                         event.stop_propagation();
@@ -996,6 +1017,21 @@ fn TopicView(
     }
 }
 
+/// Rows and approximate width (em) that fit `text`, so the inline editor keeps
+/// the size of the topic instead of a large fixed box.
+fn editor_size(text: &str) -> (usize, f64) {
+    let rows = text.split('\n').count().max(1);
+    let width = text
+        .split('\n')
+        .map(|line| {
+            line.chars()
+                .map(|c| if c.is_ascii() { 0.6 } else { 1.0 })
+                .sum::<f64>()
+        })
+        .fold(1.0_f64, f64::max);
+    (rows, width + 0.5)
+}
+
 #[component]
 fn TopicEditor(session: EditSession) -> Element {
     let context = use_context::<ViewContext>();
@@ -1005,10 +1041,14 @@ fn TopicEditor(session: EditSession) -> Element {
     let mut finished = use_signal(|| false);
     let mut focused = use_signal(|| false);
     let mut editor = context.editor;
+    let edited = use_signal(|| session.id.clone());
+    // A pointer press selects before the editor blurs, and selection changes bump
+    // the revision, so the revision must not invalidate the draft. Changes to the
+    // edited node itself close the editor through the effect in `MapBody`.
     let commit = move || -> Result<(), MindMapError> {
         let handle = context.handle.ok_or(MindMapError::StaleOperation)?;
-        if handle.revision()? != session.revision {
-            return Err(MindMapError::StaleOperation);
+        if !handle.edits(context.view_id, &edited.peek()) {
+            return Ok(());
         }
         handle.update_draft(context.view_id, draft.peek().clone());
         handle.commit_pending().map(|_| ())
@@ -1018,8 +1058,10 @@ fn TopicEditor(session: EditSession) -> Element {
             context.report(handle.cancel_pending());
         }
     };
+    let (rows, width) = editor_size(&draft.read());
     rsx! {
-        textarea { class: "dme-editor", autofocus: true, aria_label: "Edit node", rows: "3", value: session.original,
+        textarea { class: "dme-editor", autofocus: true, aria_label: "{context.labels.read().edit_topic}", rows: "{rows}", value: session.original,
+     style: "--dme-editor-width:{width}em",
             onmounted: move |event| async move {
                 if let Err(error) = event.data().set_focus(true).await {
                     // Dioxus Desktop 0.7.10 returns null for successful focus.
@@ -1066,7 +1108,7 @@ fn TopicEditor(session: EditSession) -> Element {
 #[component]
 fn GestureOverlay(
     gesture: Signal<Option<NodeDrag>>,
-    locale: Locale,
+    labels: Signal<Labels>,
     mounts: Signal<Mounts>,
     mut viewport: Signal<Viewport>,
     container: Signal<Option<Rc<MountedData>>>,
@@ -1137,10 +1179,10 @@ fn GestureOverlay(
         if let Some(current)=gesture() {
             if current.active {
                 if current.source.is_some() {
-                    div {class:"dme-drag-status",role:"status", if locale==Locale::Zh {"拖动节点 · Esc 取消"} else {"Moving branches · Esc to cancel"}}
+                    div {class:"dme-drag-status",role:"status", "{labels.read().moving}"}
                     if let Some(Ok(Some((id,rect,at))))=&*target.read() {
                         div {class:"dme-drop-target", "data-drop-id":id.clone(), style:format!("position:fixed;left:{}px;top:{}px;width:{}px;height:{}px;--dme-drop-band:{}px;",rect.x,rect.y,rect.width,rect.height,12.0*viewport.peek().scale),
-                            span {class:"dme-drop-label", if locale==Locale::Zh {"释放以移动"} else {"Drop to move"}}
+                            span {class:"dme-drop-label", "{labels.read().drop_here}"}
                         }
                         // The hit test used by commit decides before / after / child.
                         span {class:"dme-drag-point",style:format!("position:fixed;left:{}px;top:{}px",at.x,at.y)}

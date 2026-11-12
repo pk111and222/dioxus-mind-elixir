@@ -64,7 +64,7 @@ dioxus-mind-elixir = { version = "0.1.0", features = ["web"] }
 use dioxus::prelude::*;
 use dioxus_mind_elixir::{
     EditableMindMap, MindMapData, MindMapError, Node, Outline, Toolbar,
-    plugins::{Locale, Plugin},
+    plugins::{Labels, Plugin},
     use_mind_map, use_plugins,
 };
 
@@ -88,24 +88,32 @@ fn App() -> Element {
         Err(error) => return rsx! { p { role: "alert", "{error}" } },
     };
     let mut error = use_signal(String::new);
+    // 组件里的文字都来自 Labels，默认英文；按需替换任意字段。
+    let labels = Labels {
+        new_topic: "新节点".into(),
+ add_child: "添加子节点".into(),
+        undo: "撤销".into(),
+        redo: "重做".into(),
+        ..Labels::default()
+    };
     rsx! {
         main {
             style: "--dme-root-background:#315c46;--dme-node-radius:8px;",
-            Toolbar { handle, locale: Locale::Zh }
+            Toolbar { handle, labels: labels.clone() }
             EditableMindMap {
                 handle,
-                locale: Locale::Zh,
+                       labels: labels.clone(),
                 style: "height:500px;",
                 on_error: move |value: MindMapError| error.set(value.to_string()),
             }
-            Outline { handle, locale: Locale::Zh }
+            Outline { handle, labels }
             p { role: "alert", "{error}" }
         }
     }
 }
 ```
 
-执行 `dx serve --platform web`。样式已内嵌，无需复制资源。必须保留 `use_plugins` 返回的 guard；工具栏、大纲需要对应插件能力，省略插件可只用核心编辑。`Locale::En` 提供英文命令文案。
+执行 `dx serve --platform web`。样式已内嵌，无需复制资源。必须保留 `use_plugins` 返回的 guard；工具栏、大纲需要对应插件能力，省略插件可只用核心编辑。组件里所有可见文字（命令、无障碍名称、提示）都来自 `Labels`：默认英文，宿主可以替换任意字段或整套换成别的语言，组件本身不内置其他语言。
 
 ### Desktop
 

@@ -119,7 +119,9 @@
 .dme-collapse-icon::before { width: 100%; height: var(--dme-collapse-icon-width, 2px); }
 .dme-collapse-icon::after { height: 100%; width: var(--dme-collapse-icon-width, 2px); }
 .dme-collapse[data-expanded="true"] > .dme-collapse-icon::after { display: none; }
-.dme-editor { display: block; resize: var(--dme-editor-resize, both); min-width: var(--dme-editor-min-width, 160px); max-width: var(--dme-editor-max-width, 400px); min-height: var(--dme-editor-min-height, 72px); padding: var(--dme-editor-padding, 4px); border: var(--dme-editor-border, 1px solid #388c69); border-radius: var(--dme-editor-radius, 4px); outline: var(--dme-editor-outline, none); background: var(--dme-editor-background, #fff); color: var(--dme-editor-color, #263b36); font: inherit; line-height: inherit; white-space: pre-wrap; }
+.dme-editor { display: block; box-sizing: content-box; width: var(--dme-editor-width, 8em); min-width: var(--dme-editor-min-width, 2em); max-width: var(--dme-editor-max-width, var(--dme-node-max-width, 230px)); min-height: var(--dme-editor-min-height, 0); margin: 0; padding: var(--dme-editor-padding, 0); resize: var(--dme-editor-resize, none); overflow: hidden; border: var(--dme-editor-border, 0); border-radius: var(--dme-editor-radius, 0); outline: var(--dme-editor-outline, none); background: var(--dme-editor-background, transparent); color: var(--dme-editor-color, inherit); font: inherit; line-height: inherit; text-align: inherit; white-space: pre-wrap; overflow-wrap: anywhere; caret-color: var(--dme-editor-caret, currentColor); }
+/* A topic being edited keeps its own box; the editor replaces only its text. */
+.dme-topic:has(> .dme-editor) { outline: var(--dme-editing-outline, var(--dme-selected-outline, 2px solid #388c69)); outline-offset: var(--dme-selected-offset, 3px); }
 /* Fixed structural reference, not visual styling: measures the renderer's
    actual transform rather than assuming a requested scale already committed. */
 .dme-scale-probe { position: absolute; width: 100px; height: 1px; left: 0; top: 0; visibility: hidden; pointer-events: none; }
