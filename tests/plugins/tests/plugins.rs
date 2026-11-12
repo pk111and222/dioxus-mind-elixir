@@ -2,7 +2,7 @@
 use dioxus_mind_elixir::{
     LayoutDirection, MindMapData, MindMapError, MindMapState, Node, Operation, Placement, Point,
     plugins::{
-        self, Capability, Command, Locale, Plugin, PluginRegistry, export,
+        self, Capability, Command, Labels, Plugin, PluginRegistry, export,
         gesture::{self, HitRect},
     },
     text,
@@ -42,7 +42,7 @@ fn commands_share_atomic_history() -> Result {
     ] {
         let data = fixture();
         let mut state = MindMapState::new(data.clone())?;
-        let operation = plugins::command_operation(&data, &["build".into()], command, Locale::Zh)?;
+        let operation = plugins::command_operation(&data, &["build".into()], command, "新节点")?;
         state.apply(operation)?;
         assert_eq!(state.history_len(), (1, 0));
         state.undo()?;
@@ -60,7 +60,7 @@ fn indent_outdent_and_collapsed_ids() -> Result {
         .expanded = false;
     let mut state = MindMapState::new(data.clone())?;
     let operation =
-        plugins::command_operation(&data, &["css".into()], Command::Outdent, Locale::En)?;
+        plugins::command_operation(&data, &["css".into()], Command::Outdent, "New node")?;
     state.apply(operation)?;
     assert_eq!(state.parent_id("css"), Some("root"));
     assert!(!state.node("design").ok_or("design")?.expanded);
@@ -74,13 +74,13 @@ fn rejected_and_readonly_do_not_damage_state() -> Result {
     let before = state.data().clone();
     state.set_read_only(true);
     let operation =
-        plugins::command_operation(&before, &["build".into()], Command::Child, Locale::En)?;
+        plugins::command_operation(&before, &["build".into()], Command::Child, "New node")?;
     assert_eq!(state.apply(operation), Err(MindMapError::ReadOnly));
     assert_eq!(state.data(), &before);
     assert_eq!(state.history_len(), (0, 0));
-    assert!(plugins::command_operation(&before, &[], Command::Child, Locale::En).is_err());
+    assert!(plugins::command_operation(&before, &[], Command::Child, "New node").is_err());
     assert!(
-        plugins::command_operation(&before, &["css".into()], Command::Indent, Locale::En).is_err()
+        plugins::command_operation(&before, &["css".into()], Command::Indent, "New node").is_err()
     );
     Ok(())
 }
@@ -233,7 +233,10 @@ fn static_html_escaping_sink_errors_and_image_validation() -> Result {
     Ok(())
 }
 #[test]
-fn locale_labels_are_complete() {
+fn labels_default_to_english_and_cover_every_command() {
+    let labels = Labels::default();
+    assert_eq!(labels.new_topic, "New node");
+    let mut seen = std::collections::BTreeSet::new();
     for command in [
         Command::Child,
         Command::SiblingAfter,
@@ -247,8 +250,15 @@ fn locale_labels_are_complete() {
         Command::Undo,
         Command::Redo,
     ] {
-        assert_ne!(Locale::Zh.label(command), Locale::En.label(command));
+        let text = labels.command(command);
+        assert!(text.is_ascii() && !text.is_empty());
+        assert!(seen.insert(text.to_string()), "duplicate label {text}");
     }
+    let custom = Labels {
+        undo: "撤销".into(),
+        ..Labels::default()
+    };
+    assert_eq!(custom.command(Command::Undo), "撤销");
 }
 #[test]
 fn malicious_export_input_is_validated() {

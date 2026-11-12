@@ -155,48 +155,111 @@ impl PluginRegistry {
         commands
     }
 }
-/// Language of built-in controls.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Locale {
-    /// English.
-    #[default]
-    En,
-    /// Simplified Chinese.
-    Zh,
+/// Every text the components show, supplied by the host. The default is English;
+/// hosts replace any field (or all of them) with their own wording or language.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Labels {
+    /// Topic of nodes created by commands.
+    pub new_topic: String,
+    /// Command: insert a child.
+    pub add_child: String,
+    /// Command: insert a sibling after.
+    pub add_sibling: String,
+    /// Command: insert a sibling before.
+    pub insert_before: String,
+    /// Command: insert a parent.
+    pub insert_parent: String,
+    /// Command: delete.
+    pub delete: String,
+    /// Command: duplicate.
+    pub duplicate: String,
+    /// Command: expand or collapse.
+    pub fold: String,
+    /// Command: indent.
+    pub indent: String,
+    /// Command: outdent.
+    pub outdent: String,
+    /// Command: undo.
+    pub undo: String,
+    /// Command: redo.
+    pub redo: String,
+    /// Accessible name of the map.
+    pub map: String,
+    /// Accessible name of the outline.
+    pub outline: String,
+    /// Accessible name of the outline breadcrumbs.
+    pub breadcrumbs: String,
+    /// Accessible name of the toolbar.
+    pub toolbar: String,
+    /// Accessible name of the topic editor.
+    pub edit_topic: String,
+    /// Collapse button.
+    pub collapse: String,
+    /// Expand button.
+    pub expand: String,
+    /// Outline row toggle.
+    pub toggle_children: String,
+    /// Outline row action that focuses a branch.
+    pub focus_branch: String,
+    /// Marker of a node with a note.
+    pub has_note: String,
+    /// Marker of a node with a picture.
+    pub has_image: String,
+    /// Shown when a picture cannot be loaded.
+    pub image_unavailable: String,
+    /// Status while dragging branches.
+    pub moving: String,
+    /// Drop target hint.
+    pub drop_here: String,
 }
-impl Locale {
-    /// Translate a command label.
-    pub fn label(self, command: Command) -> &'static str {
-        match (self, command) {
-            (Self::En, Command::Child) => "Add child",
-            (Self::Zh, Command::Child) => "添加子节点",
-            (Self::En, Command::SiblingAfter) => "Add sibling",
-            (Self::Zh, Command::SiblingAfter) => "添加同级",
-            (Self::En, Command::SiblingBefore) => "Insert before",
-            (Self::Zh, Command::SiblingBefore) => "前插同级",
-            (Self::En, Command::Parent) => "Insert parent",
-            (Self::Zh, Command::Parent) => "插入父节点",
-            (Self::En, Command::Delete) => "Delete",
-            (Self::Zh, Command::Delete) => "删除",
-            (Self::En, Command::Duplicate) => "Duplicate",
-            (Self::Zh, Command::Duplicate) => "复制",
-            (Self::En, Command::Fold) => "Expand / collapse",
-            (Self::Zh, Command::Fold) => "展开 / 折叠",
-            (Self::En, Command::Indent) => "Indent",
-            (Self::Zh, Command::Indent) => "缩进",
-            (Self::En, Command::Outdent) => "Outdent",
-            (Self::Zh, Command::Outdent) => "提升层级",
-            (Self::En, Command::Undo) => "Undo",
-            (Self::Zh, Command::Undo) => "撤销",
-            (Self::En, Command::Redo) => "Redo",
-            (Self::Zh, Command::Redo) => "重做",
+impl Default for Labels {
+    fn default() -> Self {
+        let s = String::from;
+        Self {
+            new_topic: s("New node"),
+            add_child: s("Add child"),
+            add_sibling: s("Add sibling"),
+            insert_before: s("Insert before"),
+            insert_parent: s("Insert parent"),
+            delete: s("Delete"),
+            duplicate: s("Duplicate"),
+            fold: s("Expand / collapse"),
+            indent: s("Indent"),
+            outdent: s("Outdent"),
+            undo: s("Undo"),
+            redo: s("Redo"),
+            map: s("Mind map"),
+            outline: s("Outline"),
+            breadcrumbs: s("Breadcrumbs"),
+            toolbar: s("Mind map toolbar"),
+            edit_topic: s("Edit node"),
+            collapse: s("Collapse"),
+            expand: s("Expand"),
+            toggle_children: s("Toggle children"),
+            focus_branch: s("Focus branch"),
+            has_note: s("Has note"),
+            has_image: s("Has image"),
+            image_unavailable: s("Image unavailable"),
+            moving: s("Moving branches · Esc to cancel"),
+            drop_here: s("Drop to move"),
         }
     }
-    pub(crate) fn topic(self) -> &'static str {
-        if self == Self::Zh {
-            "新节点"
-        } else {
-            "New node"
+}
+impl Labels {
+    /// Label of a command.
+    pub fn command(&self, command: Command) -> &str {
+        match command {
+            Command::Child => &self.add_child,
+            Command::SiblingAfter => &self.add_sibling,
+            Command::SiblingBefore => &self.insert_before,
+            Command::Parent => &self.insert_parent,
+            Command::Delete => &self.delete,
+            Command::Duplicate => &self.duplicate,
+            Command::Fold => &self.fold,
+            Command::Indent => &self.indent,
+            Command::Outdent => &self.outdent,
+            Command::Undo => &self.undo,
+            Command::Redo => &self.redo,
         }
     }
 }
@@ -213,7 +276,7 @@ pub fn command_operation(
     data: &MindMapData,
     ids: &[String],
     command: Command,
-    locale: Locale,
+    new_topic: &str,
 ) -> Result<Operation, MindMapError> {
     let id = ids
         .first()
@@ -227,7 +290,7 @@ pub fn command_operation(
         loop {
             let candidate = format!("plugin-{n}");
             if data.node_data.find(&candidate).is_none() {
-                return Ok(Node::new(candidate, locale.topic()));
+                return Ok(Node::new(candidate, new_topic));
             }
             n = n
                 .checked_add(1)
@@ -294,11 +357,11 @@ pub fn command_operation(
     };
     Ok(operation)
 }
-/// Execute a command through the shared checked handle.
+/// Execute a command through the shared checked handle. New nodes use `new_topic`.
 pub fn execute(
     handle: MindMapHandle,
     command: Command,
-    locale: Locale,
+    new_topic: &str,
 ) -> Result<(), MindMapError> {
     match command {
         Command::Undo => handle.undo(),
@@ -308,7 +371,7 @@ pub fn execute(
                 &handle.document()?,
                 &handle.selection()?,
                 command,
-                locale,
+                new_topic,
             )?)
             .map(|_| ()),
     }

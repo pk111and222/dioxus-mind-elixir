@@ -6,7 +6,7 @@ use dioxus_mind_elixir::{
     EditableMindMap, LayoutDirection, MindMapData, MindMapError, MindMapHandle, Node, Operation,
     Outline, Toolbar, Viewport,
     plugins::{
-        Locale, Plugin,
+        Labels, Plugin,
         export::{self, ExportFile, ImageOptions},
     },
     use_mind_map, use_plugins,
@@ -14,6 +14,55 @@ use dioxus_mind_elixir::{
 
 fn main() {
     dioxus::launch(App);
+}
+
+/// Demo language (the component itself only knows the `Labels` the host passes in).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Locale {
+    En,
+    Zh,
+}
+
+impl Locale {
+    fn labels(self) -> Labels {
+        match self {
+            Self::En => Labels::default(),
+            Self::Zh => zh_labels(),
+        }
+    }
+}
+
+/// Chinese labels for the components; hosts supply their own wording like this.
+fn zh_labels() -> Labels {
+    let s = String::from;
+    Labels {
+        new_topic: s("新节点"),
+        add_child: s("添加子节点"),
+        add_sibling: s("添加同级"),
+        insert_before: s("前插同级"),
+        insert_parent: s("插入父节点"),
+        delete: s("删除"),
+        duplicate: s("复制"),
+        fold: s("展开 / 折叠"),
+        indent: s("缩进"),
+        outdent: s("提升层级"),
+        undo: s("撤销"),
+        redo: s("重做"),
+        map: s("脑图"),
+        outline: s("大纲"),
+        breadcrumbs: s("路径"),
+        toolbar: s("脑图工具栏"),
+        edit_topic: s("编辑节点"),
+        collapse: s("折叠"),
+        expand: s("展开"),
+        toggle_children: s("显示或隐藏子节点"),
+        focus_branch: s("聚焦此分支"),
+        has_note: s("有备注"),
+        has_image: s("有配图"),
+        image_unavailable: s("图片无法显示"),
+        moving: s("拖动节点 · Esc 取消"),
+        drop_here: s("释放以移动"),
+    }
 }
 
 fn label(locale: Locale, en: &'static str, zh: &'static str) -> &'static str {
@@ -127,7 +176,7 @@ fn App() -> Element {
             nav { class: "topbar", aria_label: label(lang, "Main navigation", "主导航"),
                 a { class: "wordmark", href: "#", "dioxus-mind-elixir" }
                 div { class: "nav-links",
-                    a { href: "https://docs.rs/dioxus-mind-elixir/0.1.0/dioxus_mind_elixir/", target: "_blank", rel: "noopener noreferrer", {label(lang, "API docs ↗", "API 文档 ↗")} }
+                    a { href: "https://docs.rs/dioxus-mind-elixir/latest/dioxus_mind_elixir/", target: "_blank", rel: "noopener noreferrer", {label(lang, "API docs ↗", "API 文档 ↗")} }
                     a { href: "https://github.com/pk111and222/dioxus-mind-elixir", target: "_blank", rel: "noopener noreferrer", "GitHub ↗" }
                     button { id: "language", class: "language", onclick: move |_| {
                         locale.set(if locale() == Locale::En { Locale::Zh } else { Locale::En });
@@ -155,7 +204,7 @@ fn App() -> Element {
                 }
                 section { class: "playground", aria_label: label(lang, "Interactive playground", "交互演示"),
                     div { class: "panel-heading",
-                        div { class: "panel-title", h2 { {label(lang, "Demo", "在线演示")} } span { class: "version", "v0.1.0" } }
+                        div { class: "panel-title", h2 { {label(lang, "Demo", "在线演示")} } span { class: "version", "v0.1.2" } }
                         div { class: "view-controls",
                             button { id: "theme", aria_pressed: dark(), onclick: move |_| dark.set(!dark()), {label(lang, "Light / dark", "明 / 暗主题")} }
                             button { id: "outline-toggle", aria_pressed: outline(), onclick: move |_| outline.set(!outline()), {label(lang, "Outline", "大纲")} }
@@ -211,7 +260,7 @@ fn App() -> Element {
                             button { onclick: move |_| reset_pending.set(false), {label(lang, "Cancel", "取消")} }
                         }
                     }
-                    Toolbar { handle, locale: lang, on_error }
+                    Toolbar { handle, labels: lang.labels(), on_error }
                     div { class: if outline() { "editor-grid" } else { "editor-grid no-outline" },
                         div { class: "map-host", onmounted: move |event| mounted.set(Some(event.data())),
                             onresize: move |event| {
@@ -227,12 +276,12 @@ fn App() -> Element {
                                     Err(value) => on_error.call(MindMapError::Measurement(value.to_string())),
                                 }
                             },
-                            EditableMindMap { handle, locale: lang, on_error, viewport, center_revision: center() }
+                            EditableMindMap { handle, labels: lang.labels(), on_error, viewport, center_revision: center() }
                         }
                         if outline() {
                             aside { class: "outline-host", aria_label: label(lang, "Shared outline", "共享大纲"),
                                 p { class: "small-label", {label(lang, "Outline", "大纲")} }
-                                Outline { handle, locale: lang, on_error }
+                                Outline { handle, labels: lang.labels(), on_error }
                             }
                         }
                     }
@@ -301,8 +350,8 @@ fn App() -> Element {
                     div { class: "error", role: "alert", p { "{error}" } button { onclick: move |_| error.set(String::new()), {label(lang, "Dismiss", "关闭")} } }
                 }
                 section { class: "install-strip",
-                    div { h2 { {label(lang, "Use in your project", "在项目中使用")} } p { "Rust 1.85+ · Dioxus 0.7.10 · dioxus-mind-elixir 0.1.0" } }
-                    div { code { "cargo add dioxus-mind-elixir@0.1.0 --features web" } a { href: label(lang, "https://github.com/pk111and222/dioxus-mind-elixir/blob/main/README.md", "https://github.com/pk111and222/dioxus-mind-elixir/blob/main/README_ZH.md"), target: "_blank", rel: "noopener noreferrer", {label(lang, "Read the setup guide ↗", "查看接入指南 ↗")} } }
+                    div { h2 { {label(lang, "Use in your project", "在项目中使用")} } p { "Rust 1.85+ · Dioxus 0.7.10 · dioxus-mind-elixir 0.1" } }
+                    div { code { "cargo add dioxus-mind-elixir --features web" } a { href: label(lang, "https://github.com/pk111and222/dioxus-mind-elixir/blob/main/README.md", "https://github.com/pk111and222/dioxus-mind-elixir/blob/main/README_ZH.md"), target: "_blank", rel: "noopener noreferrer", {label(lang, "Read the setup guide ↗", "查看接入指南 ↗")} } }
                 }
                 footer {
                     p { {label(lang, "Entirely AI-generated, with human regression testing. If you object to AI-generated software, please do not use it. AI-generated merge requests are welcome; no AI disclosure label is required.", "本项目全部由 AI 生成，已进行人工回归测试。如果你对此有意见，请勿使用。MR 接受 AI 代码，无需标注 AI 生成。")} }

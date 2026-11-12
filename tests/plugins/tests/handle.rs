@@ -115,7 +115,7 @@ fn disposed_handle_returns_error() -> TestResult {
 #[test]
 fn plugin_guards_and_subscriptions_release_without_borrowing_callbacks() -> TestResult {
     run(|handle| {
-        use dioxus_mind_elixir::plugins::{Capability, Command, Locale, Plugin, execute};
+        use dioxus_mind_elixir::plugins::{Capability, Command, Plugin, execute};
         let mut guard = handle.register_plugin(Plugin::new("test", vec![Capability::Keyboard]))?;
         assert!(handle.has_plugin(Capability::Keyboard));
         assert!(handle.register_plugin(Plugin::new("test", vec![])).is_err());
@@ -127,11 +127,11 @@ fn plugin_guards_and_subscriptions_release_without_borrowing_callbacks() -> Test
         handle.select(&["build".into()])?;
         handle.set_before(|_| false)?;
         assert_eq!(
-            execute(handle, Command::Child, Locale::En),
+            execute(handle, Command::Child, "New node"),
             Err(MindMapError::Rejected)
         );
         handle.clear_before()?;
-        execute(handle, Command::Child, Locale::En)?;
+        execute(handle, Command::Child, "New node")?;
         assert!(*calls.borrow() > 0);
         guard.set_enabled(false)?;
         let disabled_count = *calls.borrow();

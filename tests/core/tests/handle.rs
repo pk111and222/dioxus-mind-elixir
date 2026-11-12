@@ -112,6 +112,34 @@ fn disposed_handle_returns_error() -> TestResult {
     Ok(())
 }
 #[test]
+fn a_draft_survives_selection_changes_before_commit() -> TestResult {
+    // Clicking elsewhere selects (and bumps the revision) before the editor
+    // blurs and commits; the draft must still apply.
+    run(|handle| {
+        let original = handle
+            .document()?
+            .node_data
+            .find("css")
+            .map(|n| n.topic.clone())
+            .ok_or_else(|| MindMapError::NodeNotFound("css".into()))?;
+        handle.begin_edit_for_test("css", &original)?;
+        handle.update_draft_for_test("renamed");
+        let before = handle.revision()?;
+        handle.select(&["build".into()])?;
+        assert!(handle.revision()? > before);
+        assert_eq!(handle.commit_pending(), Ok(true));
+        assert_eq!(
+            handle
+                .document()?
+                .node_data
+                .find("css")
+                .map(|n| n.topic.clone()),
+            Some("renamed".into())
+        );
+        Ok(())
+    })
+}
+#[test]
 fn pending_drafts_commit_as_one_undoable_change_or_cancel() -> TestResult {
     run(|handle| {
         assert_eq!(handle.pending_edit()?, None);

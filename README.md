@@ -64,7 +64,7 @@ Put this in `src/main.rs`:
 use dioxus::prelude::*;
 use dioxus_mind_elixir::{
     EditableMindMap, MindMapData, MindMapError, Node, Outline, Toolbar,
-    plugins::{Locale, Plugin},
+    plugins::{Labels, Plugin},
     use_mind_map, use_plugins,
 };
 
@@ -91,21 +91,21 @@ fn App() -> Element {
     rsx! {
         main {
             style: "--dme-root-background:#315c46;--dme-node-radius:8px;",
-            Toolbar { handle, locale: Locale::En }
+            Toolbar { handle, labels: Labels::default() }
             EditableMindMap {
                 handle,
-                locale: Locale::En,
+                       labels: Labels::default(),
                 style: "height:500px;",
                 on_error: move |value: MindMapError| error.set(value.to_string()),
             }
-            Outline { handle, locale: Locale::En }
+            Outline { handle }
             p { role: "alert", "{error}" }
         }
     }
 }
 ```
 
-Run `dx serve --platform web`. Styles are embedded in the crate; there is no asset-copy step. Keep the guard returned by `use_plugins` alive. The toolbar and outline appear when their capabilities are installed; omit plugins to use core editing alone. Set `Locale::Zh` for Chinese command labels.
+Run `dx serve --platform web`. Styles are embedded in the crate; there is no asset-copy step. Keep the guard returned by `use_plugins` alive. The toolbar and outline appear when their capabilities are installed; omit plugins to use core editing alone. Every visible text (commands, accessible names, hints) comes from `Labels`, English by default; pass `labels` to `Toolbar`, `EditableMindMap` and `Outline` to replace any field or translate all of them. The component ships no other language.
 
 ### Desktop
 

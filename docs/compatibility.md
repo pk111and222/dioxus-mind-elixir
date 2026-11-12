@@ -1,6 +1,6 @@
 # Compatibility and platform support
 
-This page describes the released `0.1.0` library. [English usage](../README.md) · [中文使用说明](../README_ZH.md)
+This page describes the `0.2` library. [English usage](../README.md) · [中文使用说明](../README_ZH.md)
 
 ## Data and state
 

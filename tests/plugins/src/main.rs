@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 use dioxus_mind_elixir::{
     EditableMindMap, LayoutDirection, MindMapError, Outline, Theme, Toolbar,
     plugins::{
-        Locale, Plugin,
+        Labels, Plugin,
         export::{self, ExportFile, ImageOptions},
     },
     use_mind_map, use_plugins,
@@ -25,7 +25,7 @@ fn App() -> Element {
         return rsx! {p{role:"alert","{error}"}};
     }
     let mut error = use_signal(String::new);
-    let mut locale = use_signal(|| Locale::En);
+    let mut locale = use_signal(|| false);
     let mut dark = use_signal(|| false);
     let mut custom = use_signal(|| false);
     let mut font = use_signal(|| false);
@@ -75,7 +75,7 @@ fn App() -> Element {
             header {p {class:"eyebrow","DIOXUS MIND ELIXIR / STAGE 03"} h1 {"插件工作台"} p {"快捷键、拖放与共享大纲 · Rust 原生导出"}}
             div {class:"controls",
                 button {id:"reset",onclick:move |_|{error.set(String::new());on_error_result(handle.set_read_only(false),error);readonly.set(false);on_error_result(handle.refresh(fixture()),error);},"Reset"}
-                button {id:"language",onclick:move |_|locale.set(if locale()==Locale::En{Locale::Zh}else{Locale::En}),"中文 / English"}
+                button {id:"language",onclick:move |_|locale.set(!locale()),"中文 / English"}
                 button {id:"theme",onclick:move |_|dark.set(!dark()),"Theme"}
                 button {id:"font",onclick:move |_| font.set(!font()),"Embedded font"}
                 button {id:"custom",onclick:move |_|custom.set(!custom()),"CSS variables"}
@@ -86,12 +86,12 @@ fn App() -> Element {
                     button {id:"layout-{name}",onclick:move |_|on_error_result(handle.apply(dioxus_mind_elixir::Operation::SetLayout(layout)).map(|_|()),error),"{name}"}
                 }
             }
-            Toolbar {handle,locale:locale(),on_error}
+            Toolbar {handle,labels:if locale() {zh_labels()} else {Labels::default()},on_error}
             div {class:"workspace",
                 div {id:"map",class:if dark(){"dark"}else{"light"},
-                    if visible(){div {onmounted:move |event|mounted.set(Some(event.data())),EditableMindMap {handle,locale:locale(),theme,on_error}}}
+                    if visible(){div {onmounted:move |event|mounted.set(Some(event.data())),EditableMindMap {handle,labels:if locale() {zh_labels()} else {Labels::default()},theme,on_error}}}
                 }
-                Outline {handle,locale:locale(),on_error}
+                Outline {handle,labels:if locale() {zh_labels()} else {Labels::default()},on_error}
             }
             p {class:"hint","Enter 同级 · Shift+Enter 前插 · Ctrl/⌘+Enter 父级 · Tab 子级 · F2 编辑 · Ctrl/⌘+点击多选 · Shift+拖动框选"}
             div {class:"exports",
@@ -178,4 +178,37 @@ fn ExportResult(file: ExportFile) -> Element {
         span {"{name} · {size} bytes"}
         {preview}
     }}
+}
+
+/// Chinese labels for the components; hosts supply their own wording like this.
+fn zh_labels() -> Labels {
+    let s = String::from;
+    Labels {
+        new_topic: s("新节点"),
+        add_child: s("添加子节点"),
+        add_sibling: s("添加同级"),
+        insert_before: s("前插同级"),
+        insert_parent: s("插入父节点"),
+        delete: s("删除"),
+        duplicate: s("复制"),
+        fold: s("展开 / 折叠"),
+        indent: s("缩进"),
+        outdent: s("提升层级"),
+        undo: s("撤销"),
+        redo: s("重做"),
+        map: s("脑图"),
+        outline: s("大纲"),
+        breadcrumbs: s("路径"),
+        toolbar: s("脑图工具栏"),
+        edit_topic: s("编辑节点"),
+        collapse: s("折叠"),
+        expand: s("展开"),
+        toggle_children: s("显示或隐藏子节点"),
+        focus_branch: s("聚焦此分支"),
+        has_note: s("有备注"),
+        has_image: s("有配图"),
+        image_unavailable: s("图片无法显示"),
+        moving: s("拖动节点 · Esc 取消"),
+        drop_here: s("释放以移动"),
+    }
 }
