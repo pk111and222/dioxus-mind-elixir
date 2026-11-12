@@ -5,6 +5,7 @@
 Rust + Dioxus 脑图组件，基于 Mind Elixir Core 重写，已发布 crates.io 0.1.0。
 英文使用文档在 README.md，中文在 README_ZH.md；功能、依赖和平台说明需同步维护。
 公开演示在 demo，scripts/build-pages 生成 GitHub Pages 静态资源。
+合并到 main 即自动发版（.github/workflows/release.yml）：分支改了 Cargo.toml 版本就用该版本，否则小版本加 1；发版提交与标签推到 release 分支，main 不改写。改动记在 CHANGELOG.md 的 “## X.Y.Z — unreleased” 下。
 保留独立 core/plugins 测试工程和 Rust 浏览器回归。平台边界见 docs/compatibility.md，来源见 NOTICE.md。
 项目全部由 AI 生成并做过人工回归；接受 AI 贡献，无需额外标注。
 

@@ -148,3 +148,11 @@
 .dme-drop-target {pointer-events:none;z-index:12;border:var(--dme-drop-border,2px dashed #388c69);border-radius:var(--dme-drop-radius,8px);background:var(--dme-drop-background,#388c6918);}
 .dme-drop-label {position:absolute;bottom:100%;left:0;white-space:nowrap;padding:var(--dme-drop-label-padding,3px 6px);font-size:var(--dme-drop-label-size,12px);background:var(--dme-drag-background,#245846);color:var(--dme-drag-color,#fff);border-radius:var(--dme-drop-radius,8px);}
 .dme-drag-point {pointer-events:none;z-index:13;width:var(--dme-drop-point-size,6px);height:var(--dme-drop-point-size,6px);background:var(--dme-drop-point-color,#388c69);border-radius:50%;}
+/* Node pictures and note markers. */
+.dme-topic[data-image="true"] { max-width: max(var(--dme-node-max-width, 230px), calc(var(--dme-image-width, 0px) + 32px)); }
+.dme-image { display: block; max-width: none; margin: var(--dme-image-margin, 0 auto 6px); border-radius: var(--dme-image-radius, 6px); object-fit: contain; pointer-events: none; user-select: none; }
+.dme-image-missing { display: flex; align-items: center; justify-content: center; margin: var(--dme-image-margin, 0 auto 6px); border: var(--dme-image-missing-border, 1px dashed #c9a2a6); border-radius: var(--dme-image-radius, 6px); color: var(--dme-image-missing-color, #a32e36); font-size: 0.8em; background: var(--dme-image-missing-background, transparent); }
+.dme-topic-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dme-note-marker { display: inline-block; width: var(--dme-note-marker-size, 7px); height: var(--dme-note-marker-size, 7px); margin-left: 6px; border-radius: 50%; background: var(--dme-note-marker-color, #c08a2d); vertical-align: middle; }
+.dme-outline-badge { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--dme-note-marker-color, #c08a2d); vertical-align: middle; }
+.dme-outline-badge[data-badge="image"] { border-radius: 1px; background: var(--dme-image-badge-color, #388c69); }

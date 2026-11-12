@@ -194,7 +194,7 @@ scripts/build-pages /dioxus-mind-elixir/
 
 Deploy **`dist/pages/`** in full. Use `/` as the build argument for a custom domain or user site. The demo has English/Chinese UI, prominent Mind Elixir attribution, editing, shared outline, themes and downloads. `?lang=zh` opens Chinese; language switching preserves your document. Edits are in memory: download JSON before reloading.
 
-A [GitHub Pages workflow](.github/workflows/pages.yml) is included. Select **GitHub Actions** under repository **Settings → Pages**, then push to `main` or run the workflow manually. The workflow reads the hosting base path automatically; if your default branch is not `main`, adjust its trigger. The bundle needs HTTP(S), not `file://`, to load WASM.
+A [GitHub Pages workflow](.github/workflows/pages.yml) is included. Select **GitHub Actions** under repository **Settings → Pages**. Every release deploys the playground from the new tag; pushing to the `release` branch or running the workflow manually also deploys. The workflow reads the hosting base path automatically. The bundle needs HTTP(S), not `file://`, to load WASM.
 
 ## Repository layout
 
@@ -226,6 +226,17 @@ cargo doc -p dioxus-mind-elixir --no-deps --locked
 ```
 
 The independent core/plugin applications and their Rust browser runners are all under `tests/`. See the [testing guide](tests/README.md). Project code forbids unsafe Rust and denies production `unwrap`, `expect` and `panic` in Clippy checks.
+
+### Releases
+
+Merging into `main` releases automatically ([release workflow](.github/workflows/release.yml)):
+
+1. CI runs in full; a failure stops the release.
+2. The version is chosen by [`scripts/release-version`](scripts/release-version). If the merged branch changed `version` in `Cargo.toml`, that version is released. If `Cargo.toml` still names a version that has not been released, that version is used. Otherwise the patch of the latest release (tag or crates.io) is increased by one. The version must be newer than every released one.
+3. One commit `release: vX.Y.Z` (version, `Cargo.lock`, dated `CHANGELOG.md` heading) is added on top of the merged commit, tagged `vX.Y.Z` and pushed to the **`release`** branch. `main` itself is never rewritten.
+4. The tag is published to crates.io, a GitHub release is created from the matching `CHANGELOG.md` section, and the playground is deployed to Pages.
+
+Write changes under `## X.Y.Z — unreleased` (or `## Unreleased`) in `CHANGELOG.md`. A run can be repeated safely: existing tags, crates.io versions and GitHub releases are reused. **Run workflow** accepts an explicit version. Repository setup: a `CARGO_REGISTRY_TOKEN` secret (a crates.io token with the publish-update scope); a deploy key with write access whose private key is the `RELEASE_DEPLOY_KEY` secret (the workflow pushes `release` and tags with it, which also triggers the Pages deployment); **Settings → Actions → Workflow permissions** set to read and write. A ruleset on `release` can restrict updates, deletions and force pushes with **Deploy keys** on the bypass list, so only the workflow updates it.
 
 Chromium regressions and macOS runtime/manual checks have been performed. Safari, Windows/Linux Desktop, real OS IME candidate confirmation and commercial XMind application checks remain unverified. See [compatibility](docs/compatibility.md).
 

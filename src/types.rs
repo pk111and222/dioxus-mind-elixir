@@ -107,6 +107,37 @@ fn expanded_default() -> bool {
     true
 }
 
+/// A node picture. The host owns the bytes; `url` is passed through the view's
+/// `image_url` resolver (if any) before rendering. Width and height are display
+/// CSS pixels and keep the picture's aspect ratio.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NodeImage {
+    /// Host reference or URL.
+    pub url: String,
+    /// Display width in CSS pixels.
+    pub width: u32,
+    /// Display height in CSS pixels.
+    pub height: u32,
+    /// Optional alternative text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+impl NodeImage {
+    /// Reject empty references and sizes outside 1..=4096 pixels.
+    pub fn validate(&self) -> Result<(), MindMapError> {
+        if self.url.trim().is_empty() {
+            return Err(MindMapError::InvalidOperation("Image URL is empty".into()));
+        }
+        if !(1..=4096).contains(&self.width) || !(1..=4096).contains(&self.height) {
+            return Err(MindMapError::InvalidOperation(
+                "Image size must be 1-4096 pixels".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// A plain-text node in the persistent nested tree.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -130,9 +161,12 @@ pub struct Node {
     /// Explicit branch stroke, inherited by descendants.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_color: Option<String>,
-    /// Preserved plain-text note; not rendered.
+    /// Plain-text note; not rendered on the canvas (hosts show it in details).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Optional picture rendered above the topic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<NodeImage>,
     /// Opaque JSON metadata, including explicit null, preserved without interpretation.
     #[serde(
         default,
@@ -153,6 +187,7 @@ impl Node {
             style: None,
             branch_color: None,
             note: None,
+            image: None,
             metadata: None,
         }
     }
@@ -185,6 +220,9 @@ impl Node {
             }
             if !ids.insert(node.id.as_str()) {
                 return Err(MindMapError::DuplicateNodeId(node.id.clone()));
+            }
+            if let Some(image) = &node.image {
+                image.validate()?;
             }
             pending.extend(node.children.iter().map(|child| (child, depth + 1)));
         }

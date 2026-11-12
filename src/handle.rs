@@ -17,9 +17,30 @@ pub struct MindMapHandle {
     before: Signal<Option<Before>>,
     listener: Signal<Option<Listener>>,
     editor_owner: Signal<Option<usize>>,
+    pending: Signal<Option<(usize, PendingEdit)>>,
     subscribers: Signal<BTreeMap<u64, Listener>>,
     next_subscription: Signal<u64>,
     plugins: Signal<PluginRegistry>,
+}
+
+/// A topic draft that is being edited in one of the views. Hosts read it to
+/// protect unsaved text (before switching documents or closing a window) and
+/// decide with [`MindMapHandle::commit_pending`] or
+/// [`MindMapHandle::cancel_pending`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingEdit {
+    /// Edited node.
+    pub id: String,
+    /// Topic when editing started.
+    pub original: String,
+    /// Current draft text.
+    pub draft: String,
+}
+impl PendingEdit {
+    /// Whether committing would change the document.
+    pub fn is_changed(&self) -> bool {
+        !self.draft.trim().is_empty() && self.draft != self.original
+    }
 }
 
 /// Create one shared document for any number of views in the current scope.
@@ -31,6 +52,7 @@ pub fn use_mind_map(data: MindMapData) -> Result<MindMapHandle, MindMapError> {
             before: Signal::new(None),
             listener: Signal::new(None),
             editor_owner: Signal::new(None),
+            pending: Signal::new(None),
             subscribers: Signal::new(BTreeMap::new()),
             next_subscription: Signal::new(0),
             plugins: Signal::new(PluginRegistry::default()),
@@ -177,6 +199,93 @@ impl MindMapHandle {
             .map_err(|_| MindMapError::StaleOperation)?
             .refresh(data)?;
         self.emit(&events)
+    }
+    /// The topic draft currently being edited, reactively tracked.
+    pub fn pending_edit(self) -> Result<Option<PendingEdit>, MindMapError> {
+        self.pending
+            .try_read()
+            .map(|pending| pending.as_ref().map(|(_, edit)| edit.clone()))
+            .map_err(|_| MindMapError::StaleOperation)
+    }
+    /// Apply the pending draft as a normal undoable topic change and close the
+    /// editor. Blank or unchanged drafts only close the editor. Returns whether
+    /// the document changed. On failure the draft stays pending.
+    pub fn commit_pending(mut self) -> Result<bool, MindMapError> {
+        let pending = self
+            .pending
+            .try_read()
+            .map_err(|_| MindMapError::StaleOperation)?
+            .clone();
+        let Some((_, edit)) = pending else {
+            return Ok(false);
+        };
+        let changed = if edit.is_changed() {
+            self.apply(Operation::SetTopic {
+                id: edit.id.clone(),
+                topic: edit.draft.clone(),
+            })?
+            .changed
+        } else {
+            false
+        };
+        *self
+            .pending
+            .try_write()
+            .map_err(|_| MindMapError::StaleOperation)? = None;
+        Ok(changed)
+    }
+    /// Discard the pending draft and close the editor.
+    pub fn cancel_pending(mut self) -> Result<(), MindMapError> {
+        *self
+            .pending
+            .try_write()
+            .map_err(|_| MindMapError::StaleOperation)? = None;
+        Ok(())
+    }
+    pub(crate) fn begin_edit(
+        mut self,
+        owner: usize,
+        id: &str,
+        original: &str,
+    ) -> Result<(), MindMapError> {
+        self.claim_editor(owner)?;
+        *self
+            .pending
+            .try_write()
+            .map_err(|_| MindMapError::StaleOperation)? = Some((
+            owner,
+            PendingEdit {
+                id: id.into(),
+                original: original.into(),
+                draft: original.into(),
+            },
+        ));
+        Ok(())
+    }
+    pub(crate) fn update_draft(mut self, owner: usize, draft: String) {
+        if let Ok(mut pending) = self.pending.try_write() {
+            if let Some((current, edit)) = pending.as_mut() {
+                if *current == owner {
+                    edit.draft = draft;
+                }
+            }
+        }
+    }
+    /// Start a draft without a view (tests and host-driven editors).
+    #[doc(hidden)]
+    pub fn begin_edit_for_test(self, id: &str, original: &str) -> Result<(), MindMapError> {
+        self.begin_edit(usize::MAX, id, original)
+    }
+    /// Update a draft started by [`Self::begin_edit_for_test`].
+    #[doc(hidden)]
+    pub fn update_draft_for_test(self, draft: &str) {
+        self.update_draft(usize::MAX, draft.into());
+    }
+    /// Whether `owner` still edits node `id` (the host may have closed it).
+    pub(crate) fn edits(self, owner: usize, id: &str) -> bool {
+        self.pending
+            .try_read()
+            .is_ok_and(|p| p.as_ref().is_some_and(|(o, e)| *o == owner && e.id == id))
     }
     pub(crate) fn claim_editor(mut self, owner: usize) -> Result<(), MindMapError> {
         *self

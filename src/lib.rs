@@ -45,12 +45,16 @@ mod theme;
 mod types;
 mod view;
 
-pub use handle::{MindMapHandle, PluginGuard, Subscription, use_mind_map, use_plugins};
+pub use handle::{
+    MindMapHandle, PendingEdit, PluginGuard, Subscription, use_mind_map, use_plugins,
+};
 pub use interact::{Point, Viewport};
 pub use outline::{Outline, OutlineProps, Toolbar, ToolbarProps};
 pub use state::{CoreEvent, MindMapState, Operation, OperationOptions, OperationResult, Placement};
 pub use theme::Theme;
-pub use types::{LayoutDirection, MindMapData, MindMapError, Node, NodeDirection, NodeStyle};
+pub use types::{
+    LayoutDirection, MindMapData, MindMapError, Node, NodeDirection, NodeImage, NodeStyle,
+};
 pub use view::{Alignment, EditableMindMap, EditableMindMapProps, MindMap, MindMapProps};
 
 /// Component stylesheet embedded in the crate; no asset-copy step is needed.

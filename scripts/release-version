@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# Release version helper for .github/workflows/release.yml.
+#
+#   scripts/release-version plan <before-sha> <head-sha> [published-version] [requested-version]
+#       Print the version to release for the merge that moved main from <before> to <head>:
+#       - a requested version (manual run) is used as given;
+#       - if <head> is already tagged as a release commit (re-run), reuse that version;
+#       - if the merge changed the package version in Cargo.toml (compared with <before>, the
+#         previous main), use the branch's version;
+#       - if Cargo.toml already names a version newer than every release (raised earlier but
+#         not released yet), use it;
+#       - otherwise bump the patch of the newest of {Cargo.toml version, last vX.Y.Z tag,
+#         latest crates.io version}. The bumped version is only committed on the release
+#         branch, never back to main.
+#       A chosen version must be newer than every released one.
+#   scripts/release-version apply <version>
+#       Set the package version in Cargo.toml; date a matching "## <version> — unreleased"
+#       heading in CHANGELOG.md.
+#   scripts/release-version notes <version>
+#       Print the CHANGELOG.md section of <version> (empty when there is none).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+fail() {
+  echo "release-version: $*" >&2
+  exit 1
+}
+
+valid() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+}
+
+# a > b for X.Y.Z versions.
+newer() {
+  local a b i
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
+  for i in 0 1 2; do
+    ((a[i] > b[i])) && return 0
+    ((a[i] < b[i])) && return 1
+  done
+  return 1
+}
+
+newest() {
+  local best="" v
+  for v in "$@"; do
+    [[ -z "$v" ]] && continue
+    if [[ -z "$best" ]] || newer "$v" "$best"; then best="$v"; fi
+  done
+  printf '%s' "$best"
+}
+
+bump_patch() {
+  local p
+  IFS=. read -r -a p <<<"$1"
+  printf '%s.%s.%s' "${p[0]}" "${p[1]}" "$((p[2] + 1))"
+}
+
+# Package version in the [package] table of Cargo.toml (stdin).
+package_version() {
+  awk '
+    /^\[package\][[:space:]]*$/ { in_pkg = 1; next }
+    /^\[/ { in_pkg = 0 }
+    in_pkg && /^version[[:space:]]*=/ {
+      sub(/^version[[:space:]]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
+    }'
+}
+
+version_at() {
+  git show "$1:Cargo.toml" 2>/dev/null | package_version
+}
+
+plan() {
+  local before="$1" head="$2" published="${3:-}" requested="${4:-}"
+  local tag last="" cur prev version
+
+  git cat-file -e "$head^{commit}" 2>/dev/null || fail "unknown commit $head"
+  [[ -z "$published" ]] || valid "$published" || fail "unexpected crates.io version '$published'"
+
+  # Re-run of the same merge: a tag whose release commit sits on top of <head>.
+  local head_full
+  head_full=$(git rev-parse "$head^{commit}")
+  while read -r tag; do
+    [[ -z "$tag" ]] && continue
+    if [[ "$(git rev-parse -q --verify "$tag^1^{commit}" 2>/dev/null || true)" == "$head_full" ]]; then
+      echo "reusing $tag, already prepared for $head" >&2
+      printf '%s\n' "${tag#v}"
+      return
+    fi
+  done < <(git tag -l 'v*')
+
+  local tags=()
+  while read -r tag; do
+    valid "${tag#v}" && tags+=("${tag#v}")
+  done < <(git tag -l 'v*')
+  last=$(newest "${tags[@]+"${tags[@]}"}" "$published")
+
+  cur=$(version_at "$head")
+  valid "$cur" || fail "Cargo.toml version '$cur' at $head is not X.Y.Z"
+  prev=""
+  if [[ -n "$before" && ! "$before" =~ ^0+$ ]] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+    prev=$(version_at "$before")
+  fi
+
+  if [[ -n "$requested" ]]; then
+    valid "$requested" || fail "requested version '$requested' is not X.Y.Z"
+    version="$requested"
+    echo "requested version $version" >&2
+  elif [[ -n "$prev" && "$cur" != "$prev" ]]; then
+    version="$cur"
+    echo "merged branch set version $cur (main had $prev)" >&2
+  elif [[ -z "$last" ]] || newer "$cur" "$last"; then
+    version="$cur"
+    echo "Cargo.toml version $cur is not released yet" >&2
+  else
+    version=$(bump_patch "$(newest "$cur" "$last")")
+    echo "version unchanged ($cur); latest release ${last:-none}; next patch $version" >&2
+  fi
+  if [[ -n "$last" ]] && ! newer "$version" "$last"; then
+    fail "version $version is not newer than the latest release $last; raise it in Cargo.toml"
+  fi
+  printf '%s\n' "$version"
+}
+
+apply() {
+  local version="$1" today tmp
+  valid "$version" || fail "'$version' is not X.Y.Z"
+  tmp=$(mktemp)
+  awk -v v="$version" '
+    /^\[package\][[:space:]]*$/ { in_pkg = 1 }
+    /^\[/ && !/^\[package\]/ { in_pkg = 0 }
+    in_pkg && !done && /^version[[:space:]]*=/ { print "version = \"" v "\""; done = 1; next }
+    { print }
+    END { if (!done) exit 3 }' Cargo.toml >"$tmp" || { rm -f "$tmp"; fail "no [package] version in Cargo.toml"; }
+  mv "$tmp" Cargo.toml
+  [[ "$(package_version <Cargo.toml)" == "$version" ]] || fail "could not set the version"
+  if [[ -f CHANGELOG.md ]]; then
+    today=$(date -u +%Y-%m-%d)
+    tmp=$(mktemp)
+    # "## X.Y.Z — unreleased" gets today's date; without one, a "## Unreleased" heading
+    # becomes this version.
+    awk -v v="$version" -v d="$today" '
+      { line[NR] = $0; l = tolower($0) }
+      l == "## " v " — unreleased" || l == "## " v " - unreleased" { exact = NR }
+      !generic && (l == "## unreleased" || l == "## [unreleased]") { generic = NR }
+      END {
+        target = exact ? exact : generic
+        for (i = 1; i <= NR; i++) print (i == target ? "## " v " — " d : line[i])
+      }' CHANGELOG.md >"$tmp"
+    mv "$tmp" CHANGELOG.md
+  fi
+}
+
+notes() {
+  local version="$1"
+  [[ -f CHANGELOG.md ]] || return 0
+  awk -v v="$version" '
+    /^## / {
+      if (found) exit
+      h = $0; sub(/^## /, "", h)
+      if (h == v || index(h, v " ") == 1) { found = 1; next }
+    }
+    found { print }' CHANGELOG.md | sed -e '/./,$!d'
+}
+
+case "${1:-}" in
+  plan) shift; [[ $# -ge 2 ]] || fail "usage: plan <before> <head> [published] [requested]"; plan "$@" ;;
+  apply) [[ $# -eq 2 ]] || fail "usage: apply <version>"; apply "$2" ;;
+  notes) [[ $# -eq 2 ]] || fail "usage: notes <version>"; notes "$2" ;;
+  *) fail "usage: plan | apply | notes (see the header of this script)" ;;
+esac

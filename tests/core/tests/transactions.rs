@@ -34,14 +34,19 @@ fn strict_json_roundtrip_preserves_supported_fields() -> Result<(), MindMapError
     Ok(())
 }
 #[test]
-fn unsupported_fields_directions_ids_and_trailing_data_are_errors() {
-    for field in [
-        "image",
-        "arrows",
-        "summaries",
-        "dangerouslySetInnerHTML",
-        "unknown",
+fn malformed_images_are_rejected_with_a_path() {
+    for image in [
+        r#"{}"#,
+        r#"{"url":"a","width":1,"height":1,"x":1}"#,
+        r#"{"url":"","width":1,"height":1}"#,
     ] {
+        let input = format!(r#"{{"nodeData":{{"id":"r","topic":"x","image":{image}}}}}"#);
+        assert!(MindMapData::from_json(&input).is_err(), "{image}");
+    }
+}
+#[test]
+fn unsupported_fields_directions_ids_and_trailing_data_are_errors() {
+    for field in ["arrows", "summaries", "dangerouslySetInnerHTML", "unknown"] {
         let input = format!(r#"{{"nodeData":{{"id":"r","topic":"x","{field}":{{}}}}}}"#);
         assert!(
             matches!(MindMapData::from_json(&input), Err(MindMapError::InvalidData { path, .. }) if path.contains("nodeData"))
@@ -367,4 +372,95 @@ fn overflowing_coordinate_conversion_is_an_error() {
         }),
         Err(MindMapError::InvalidGeometry)
     );
+}
+#[test]
+fn notes_and_images_are_undoable_validated_and_roundtrip() -> Result<(), MindMapError> {
+    use dioxus_mind_elixir::NodeImage;
+    let mut state = MindMapState::new(fixture())?;
+    state.apply(Operation::SetNote {
+        id: "css".into(),
+        note: Some("说明\n第二行".into()),
+    })?;
+    assert_eq!(node(&state, "css")?.note.as_deref(), Some("说明\n第二行"));
+    state.apply(Operation::SetNote {
+        id: "css".into(),
+        note: Some("   ".into()),
+    })?;
+    assert_eq!(node(&state, "css")?.note, None);
+    state.undo()?;
+    assert_eq!(node(&state, "css")?.note.as_deref(), Some("说明\n第二行"));
+    let image = NodeImage {
+        url: "img/a.png".into(),
+        width: 120,
+        height: 80,
+        alt: None,
+    };
+    state.apply(Operation::SetImage {
+        id: "css".into(),
+        image: Some(image.clone()),
+    })?;
+    let before = state.data().clone();
+    for bad in [
+        NodeImage {
+            url: " ".into(),
+            ..image.clone()
+        },
+        NodeImage {
+            width: 0,
+            ..image.clone()
+        },
+        NodeImage {
+            height: 5000,
+            ..image.clone()
+        },
+    ] {
+        assert!(
+            state
+                .apply(Operation::SetImage {
+                    id: "css".into(),
+                    image: Some(bad)
+                })
+                .is_err()
+        );
+    }
+    assert_eq!(state.data(), &before);
+    let json = state.data().to_json()?;
+    assert!(json.contains("\"image\""));
+    assert_eq!(MindMapData::from_json(&json)?, before);
+    assert!(dioxus_mind_elixir::text::to_plaintext(&before).is_err());
+    state.undo()?;
+    assert_eq!(node(&state, "css")?.image, None);
+    Ok(())
+}
+#[test]
+fn fit_centres_and_never_magnifies() -> Result<(), MindMapError> {
+    use dioxus_mind_elixir::plugins::gesture::fit;
+    let small = fit(
+        Point { x: 0.0, y: 0.0 },
+        Point { x: 100.0, y: 50.0 },
+        Point { x: 800.0, y: 600.0 },
+    )?;
+    assert!((small.scale - 1.0).abs() < 1e-9);
+    assert!((small.translation.x - 350.0).abs() < 1e-9);
+    let large = fit(
+        Point { x: 0.0, y: 0.0 },
+        Point {
+            x: 4000.0,
+            y: 100.0,
+        },
+        Point { x: 848.0, y: 600.0 },
+    )?;
+    assert!((large.scale - 0.2).abs() < 1e-9);
+    assert!(
+        fit(
+            Point {
+                x: f64::NAN,
+                y: 0.0
+            },
+            Point::default(),
+            Point { x: 1.0, y: 1.0 }
+        )
+        .is_err()
+    );
+    Ok(())
 }
