@@ -1,10 +1,9 @@
 name: Build and deploy playground to Pages
 
-# Deploys the playground from the `release` branch: the release workflow pushes each release there
-# (with the deploy key), which starts this workflow. It can also be run manually or called.
+# Deploys the playground. The release workflow calls this with each new tag; run it manually
+# (Actions → this workflow → Run workflow) to redeploy, optionally from a branch or tag such as
+# `release` or `v0.1.1`.
 on:
-  push:
-    branches: [release]
   workflow_dispatch:
     inputs:
       ref:

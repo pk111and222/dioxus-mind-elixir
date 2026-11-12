@@ -8,9 +8,7 @@ name: Release
 #        - otherwise                                             -> previous release + 1 patch;
 #   3. commit the version (and dated CHANGELOG heading) on top of the merged main commit, tag it
 #      vX.Y.Z and push that commit to the `release` branch (main itself is never rewritten);
-#   4. publish the tag to crates.io and create the GitHub release.
-# The release branch and tags are pushed with the RELEASE_DEPLOY_KEY deploy key (the only actor
-# allowed to update `release`); that push starts pages.yml, which deploys the playground.
+#   4. publish the tag to crates.io, create the GitHub release and deploy the playground to Pages.
 # Re-running a failed run reuses the tag it created and skips the steps that already succeeded.
 # Manual runs may pass an explicit version.
 
@@ -103,24 +101,6 @@ jobs:
           git commit -m "release: $TAG" -m "Source: $GITHUB_SHA"
           git tag -a "$TAG" -m "$CRATE $VERSION"
 
-      - name: Use the release deploy key for pushing
-        env:
-          DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$DEPLOY_KEY" ]]; then
-            echo "::error::Add a RELEASE_DEPLOY_KEY repository secret (private key of a deploy key with write access)."
-            exit 1
-          fi
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/release_key
-          chmod 600 ~/.ssh/release_key
-          ssh-keyscan -t ed25519,rsa,ecdsa github.com >> ~/.ssh/known_hosts 2>/dev/null
-          # Reads keep using the checkout token; only pushes go through the deploy key.
-          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
-          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/release_key -o IdentitiesOnly=yes" >> "$GITHUB_ENV"
-
       - name: Push tag and release branch
         env:
           TAG: ${{ steps.plan.outputs.tag }}
@@ -193,3 +173,13 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
           fi
+
+  pages:
+    needs: [prepare, publish]
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
