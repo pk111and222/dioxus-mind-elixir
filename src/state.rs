@@ -1,7 +1,7 @@
 //! Transactional, renderer-independent document operations and snapshot history.
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{LayoutDirection, MindMapData, MindMapError, Node, NodeDirection};
+use crate::{LayoutDirection, MindMapData, MindMapError, Node, NodeDirection, NodeImage};
 
 /// Where an ordered group is inserted.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,6 +67,20 @@ pub enum Operation {
         id: String,
         /// New expansion state.
         expanded: bool,
+    },
+    /// Replace or clear a plain-text note. Blank notes are stored as `None`.
+    SetNote {
+        /// Node ID.
+        id: String,
+        /// New note.
+        note: Option<String>,
+    },
+    /// Replace or clear a node picture.
+    SetImage {
+        /// Node ID.
+        id: String,
+        /// New picture.
+        image: Option<NodeImage>,
     },
     /// Change document layout.
     SetLayout(LayoutDirection),
@@ -398,6 +412,21 @@ impl MindMapState {
                 root.find_mut(id)
                     .ok_or_else(|| MindMapError::NodeNotFound(id.clone()))?
                     .expanded = *expanded;
+                Ok(Vec::new())
+            }
+            Operation::SetNote { id, note } => {
+                root.find_mut(id)
+                    .ok_or_else(|| MindMapError::NodeNotFound(id.clone()))?
+                    .note = note.clone().filter(|note| !note.trim().is_empty());
+                Ok(Vec::new())
+            }
+            Operation::SetImage { id, image } => {
+                if let Some(image) = image {
+                    image.validate()?;
+                }
+                root.find_mut(id)
+                    .ok_or_else(|| MindMapError::NodeNotFound(id.clone()))?
+                    .image = image.clone();
                 Ok(Vec::new())
             }
             Operation::SetLayout(direction) => {

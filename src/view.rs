@@ -53,17 +53,25 @@ pub struct MindMapProps {
     /// Reports recoverable errors.
     #[props(default)]
     pub on_error: EventHandler<MindMapError>,
+    /// Increment to fit all visible nodes into the container (zoom ≤ 100%).
+    #[props(default)]
+    pub fit_revision: u64,
+    /// Map a stored node image reference to a URL the renderer can load.
+    #[props(default)]
+    pub image_url: Option<Callback<String, String>>,
 }
 
 /// Render a reactive document without an editing controller.
 #[component]
 pub fn MindMap(props: MindMapProps) -> Element {
-    rsx! { MapBody { document: props.data.read().clone(), class: props.class, style: props.style, measurement_revision: props.measurement_revision, alignment: props.alignment, theme: props.theme, viewport_control: props.viewport, center_revision: props.center_revision, on_error: props.on_error } }
+    rsx! { MapBody { document: props.data.read().clone(), class: props.class, style: props.style, measurement_revision: props.measurement_revision, alignment: props.alignment, theme: props.theme, viewport_control: props.viewport, center_revision: props.center_revision, on_error: props.on_error, fit_revision: props.fit_revision, image_url: props.image_url } }
 }
 
 /// Editable view of a shared checked document. Double-click a node to edit.
-/// Enter/Tab commit, Shift+Enter inserts a line break, Escape cancels. Wheel pans;
-/// Ctrl/Meta+wheel zooms. Viewport state belongs to this view, never to history.
+/// Enter/Tab commit, Shift+Enter inserts a line break, Escape cancels. Blur
+/// cancels unless `blur_commits` is set. The draft is visible to the host via
+/// [`MindMapHandle::pending_edit`]. Wheel pans; Ctrl/Meta+wheel zooms.
+/// Viewport state belongs to this view, never to history.
 #[component]
 pub fn EditableMindMap(
     handle: MindMapHandle,
@@ -76,11 +84,14 @@ pub fn EditableMindMap(
     #[props(default)] center_revision: u64,
     #[props(default)] on_error: EventHandler<MindMapError>,
     #[props(default)] locale: Locale,
+    #[props(default)] fit_revision: u64,
+    #[props(default)] image_url: Option<Callback<String, String>>,
+    #[props(default)] blur_commits: bool,
 ) -> Element {
     let document = handle.document();
     match document {
         Ok(document) => {
-            rsx! { MapBody { document, handle: Some(handle), locale, class, style, measurement_revision, alignment, theme, viewport_control: viewport, center_revision, on_error } }
+            rsx! { MapBody { document, handle: Some(handle), locale, class, style, measurement_revision, alignment, theme, viewport_control: viewport, center_revision, on_error, fit_revision, image_url, blur_commits } }
         }
         Err(error) => rsx! { p { role: "alert", "{error}" } },
     }
@@ -113,6 +124,8 @@ struct ViewContext {
     locale: Locale,
     suppress_click: Signal<bool>,
     gesture_epoch: Signal<u64>,
+    image_url: Option<Callback<String, String>>,
+    blur_commits: bool,
 }
 impl ViewContext {
     fn resized(mut self) {
@@ -242,7 +255,7 @@ impl ViewContext {
                     return Err(MindMapError::ReadOnly);
                 }
                 handle.select(std::slice::from_ref(&node.id))?;
-                handle.claim_editor(self.view_id)?;
+                handle.begin_edit(self.view_id, &node.id, &node.topic)?;
                 self.editor.set(Some(EditSession {
                     id: node.id.clone(),
                     original: node.topic.clone(),
@@ -268,6 +281,9 @@ fn MapBody(
     #[props(default)] center_revision: u64,
     on_error: EventHandler<MindMapError>,
     #[props(default)] locale: Locale,
+    #[props(default)] fit_revision: u64,
+    #[props(default)] image_url: Option<Callback<String, String>>,
+    #[props(default)] blur_commits: bool,
 ) -> Element {
     let mounts = use_signal(Mounts::new);
     let canvas = use_signal(|| None::<Rc<MountedData>>);
@@ -291,6 +307,8 @@ fn MapBody(
         locale,
         suppress_click,
         gesture_epoch,
+        image_url,
+        blur_commits,
     };
     use_context_provider(|| context);
     let local_viewport = use_signal(Viewport::default);
@@ -453,6 +471,63 @@ fn MapBody(
         .await;
         context.report(result);
     });
+    let mut fit_request = use_signal(|| 0u64);
+    use_effect(use_reactive((&fit_revision,), move |(revision,)| {
+        fit_request.set(revision)
+    }));
+    let _fit = use_resource(move || async move {
+        let request = fit_request();
+        if request == 0 {
+            return;
+        }
+        let elements = mounts.peek().clone();
+        let view_element = container.peek().clone();
+        let Some(view_element) = view_element else {
+            return;
+        };
+        let before = *viewport.peek();
+        let result = async {
+            let view = platform::measure(&view_element).await?;
+            let mut bounds: Option<(f64, f64, f64, f64)> = None;
+            for element in elements.values() {
+                let r = platform::measure(element).await?;
+                bounds = Some(match bounds {
+                    None => (r.x, r.y, r.x + r.width, r.y + r.height),
+                    Some((x0, y0, x1, y1)) => (
+                        x0.min(r.x),
+                        y0.min(r.y),
+                        x1.max(r.x + r.width),
+                        y1.max(r.y + r.height),
+                    ),
+                });
+            }
+            let Some((x0, y0, x1, y1)) = bounds else {
+                return Ok(());
+            };
+            let a = before.to_canvas(Point {
+                x: x0 - view.x,
+                y: y0 - view.y,
+            })?;
+            let b = before.to_canvas(Point {
+                x: x1 - view.x,
+                y: y1 - view.y,
+            })?;
+            let next = gesture::fit(
+                a,
+                b,
+                Point {
+                    x: view.width,
+                    y: view.height,
+                },
+            )?;
+            if *viewport.peek() == before {
+                viewport.set(next);
+            }
+            Ok(())
+        }
+        .await;
+        context.report(result);
+    });
     // Deleting/replacing the edited node, or changing it elsewhere, cancels this
     // view's draft. No stale asynchronous result may restore that editor.
     use_effect(move || {
@@ -469,12 +544,18 @@ fn MapBody(
                     matches!(handle.is_read_only(), Ok(false))
                         && matches!(handle.owns_editor(context.view_id), Ok(true))
                         && matches!(handle.revision(), Ok(revision) if revision == session.revision)
+                        && handle.edits(context.view_id, &session.id)
                 }
                 None => false,
             };
             if !exists || !writable {
                 let mut editor = context.editor;
                 editor.set(None);
+                if let Some(handle) = handle {
+                    if handle.edits(context.view_id, &session.id) {
+                        context.report(handle.cancel_pending());
+                    }
+                }
             }
         }
     });
@@ -792,6 +873,19 @@ fn TopicView(
         .as_ref()
         .is_some_and(|session| session.id == node.id);
     let style = node.style.clone().unwrap_or_default();
+    let image = node.image.clone().map(|image| {
+        let src = match context.image_url {
+            Some(resolve) => resolve.call(image.url.clone()),
+            None => image.url.clone(),
+        };
+        (src, image)
+    });
+    let mut broken = use_signal(|| None::<String>);
+    let has_note = node.note.is_some();
+    let has_image = image.is_some();
+    let image_width = image
+        .as_ref()
+        .map(|(_, image)| format!("--dme-image-width:{}px", image.width));
     let flow = match direction {
         LayoutDirection::Left => "left",
         LayoutDirection::Down => "down",
@@ -803,6 +897,7 @@ fn TopicView(
             aria_expanded: if node.children.is_empty() { None } else { Some(expanded.to_string()) },
             font_size: style.font_size, font_family: style.font_family, color: style.color, background: style.background,
             font_weight: style.font_weight, width: style.width, border: style.border, text_decoration: style.text_decoration,
+            "data-image": has_image, "data-note": has_note, style: image_width,
             onmounted: move |event| {
                 own_element.set(Some(event.data()));
                 mounts.write().insert(mount_id.clone(), event.data());
@@ -846,11 +941,29 @@ fn TopicView(
                 if event.is_composing() { return; }
                 if event.key() == Key::F2 { event.prevent_default(); event.stop_propagation(); context.start_edit(&keyboard_node); } else { context.keyboard(event, &keyboard_node); }
             },
+            if let Some((src, image)) = image {
+                if broken.read().as_deref() == Some(src.as_str()) {
+                    span { class: "dme-image-missing", role: "img", aria_label: image.alt.clone().unwrap_or_default(),
+                        style: format!("width:{}px;height:{}px", image.width, image.height),
+                        if context.locale == Locale::Zh { "图片无法显示" } else { "Image unavailable" }
+                    }
+                } else {
+                    img { class: "dme-image", src: "{src}", alt: image.alt.clone().unwrap_or_default(), draggable: "false",
+                        width: "{image.width}", height: "{image.height}",
+                        style: format!("width:{}px;height:{}px", image.width, image.height),
+                        onerror: move |_| broken.set(Some(src.clone())),
+                        onload: move |_| context.resized(),
+                    }
+                }
+            }
             if editing {
                 if let Some(session) = context.editor.read().clone() {
                     TopicEditor { key: "{session.id}-{session.revision}", session }
                 }
-            } else { "{node.topic}" }
+            } else { span { class: "dme-topic-text", "{node.topic}" } }
+            if has_note && !editing {
+                span { class: "dme-note-marker", aria_label: if context.locale == Locale::Zh { "有备注" } else { "Has note" }, title: if context.locale == Locale::Zh { "有备注" } else { "Has note" } }
+            }
             if selected && !editing {
                 span { class: "dme-focus-marker", aria_hidden: "true",
                     onmounted: move |_| async move {
@@ -892,21 +1005,18 @@ fn TopicEditor(session: EditSession) -> Element {
     let mut finished = use_signal(|| false);
     let mut focused = use_signal(|| false);
     let mut editor = context.editor;
-    let original = session.original.clone();
     let commit = move || -> Result<(), MindMapError> {
         let handle = context.handle.ok_or(MindMapError::StaleOperation)?;
         if handle.revision()? != session.revision {
             return Err(MindMapError::StaleOperation);
         }
-        let value = draft.peek().clone();
-        if value.trim().is_empty() || value == original {
-            return Ok(());
+        handle.update_draft(context.view_id, draft.peek().clone());
+        handle.commit_pending().map(|_| ())
+    };
+    let discard = move || {
+        if let Some(handle) = context.handle {
+            context.report(handle.cancel_pending());
         }
-        handle.apply(Operation::SetTopic {
-            id: session.id.clone(),
-            topic: value,
-        })?;
-        Ok(())
     };
     rsx! {
         textarea { class: "dme-editor", autofocus: true, aria_label: "Edit node", rows: "3", value: session.original,
@@ -918,7 +1028,11 @@ fn TopicEditor(session: EditSession) -> Element {
                 }
             },
             onfocus: move |_| focused.set(true),
-            oninput: move |event| { draft.set(event.value()); context.resized(); },
+            oninput: move |event| {
+                let value = event.value();
+                if let Some(handle) = context.handle { handle.update_draft(context.view_id, value.clone()); }
+                draft.set(value); context.resized();
+            },
             oncompositionstart: move |_| { composing.set(true); composition_ended.set(false); },
             oncompositionend: move |_| { composing.set(false); composition_ended.set(true); },
             onkeyup: move |_| composition_ended.set(false),
@@ -931,15 +1045,19 @@ fn TopicEditor(session: EditSession) -> Element {
                 let submit = event.key() == Key::Tab || (event.key() == Key::Enter && !event.modifiers().shift());
                 if cancel || submit {
                     event.prevent_default(); finished.set(true);
-                    if submit { context.report(commit()); }
+                    if submit { context.report(commit()); } else { discard(); }
                     editor.set(None);
 
                 }
             },
             onblur: move |_| {
-                // Keep the explicit commit/cancel contract; blur cancels the draft
-                // and never creates a hidden history operation during IME events.
-                if !finished() { editor.set(None); }
+                // Blur cancels by default; hosts that protect drafts opt into a
+                // commit. Composition never blurs, so IME confirmation is safe.
+                if !finished() {
+                    finished.set(true);
+                    if context.blur_commits { context.report(commit()); } else { discard(); }
+                    editor.set(None);
+                }
             },
         }
     }

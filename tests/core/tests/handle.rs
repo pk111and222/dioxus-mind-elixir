@@ -111,3 +111,54 @@ fn disposed_handle_returns_error() -> TestResult {
     );
     Ok(())
 }
+#[test]
+fn pending_drafts_commit_as_one_undoable_change_or_cancel() -> TestResult {
+    run(|handle| {
+        assert_eq!(handle.pending_edit()?, None);
+        assert_eq!(handle.commit_pending(), Ok(false));
+        let original = handle
+            .document()?
+            .node_data
+            .find("css")
+            .map(|n| n.topic.clone());
+        let Some(original) = original else {
+            return Err(MindMapError::NodeNotFound("css".into()));
+        };
+        handle.begin_edit_for_test("css", &original)?;
+        handle.update_draft_for_test("新的\n两行");
+        let pending = handle.pending_edit()?;
+        assert!(
+            pending
+                .as_ref()
+                .is_some_and(|p| p.is_changed() && p.draft == "新的\n两行")
+        );
+        assert_eq!(handle.commit_pending(), Ok(true));
+        assert_eq!(handle.pending_edit()?, None);
+        handle.undo()?;
+        assert_eq!(
+            handle
+                .document()?
+                .node_data
+                .find("css")
+                .map(|n| n.topic.clone()),
+            Some(original.clone())
+        );
+        handle.begin_edit_for_test("css", &original)?;
+        handle.update_draft_for_test("   ");
+        assert!(handle.pending_edit()?.is_some_and(|p| !p.is_changed()));
+        assert_eq!(handle.commit_pending(), Ok(false));
+        handle.begin_edit_for_test("css", &original)?;
+        handle.update_draft_for_test("丢掉");
+        handle.cancel_pending()?;
+        assert_eq!(handle.pending_edit()?, None);
+        assert_eq!(
+            handle
+                .document()?
+                .node_data
+                .find("css")
+                .map(|n| n.topic.clone()),
+            Some(original)
+        );
+        Ok(())
+    })
+}

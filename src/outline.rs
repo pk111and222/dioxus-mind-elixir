@@ -14,6 +14,7 @@ pub fn Outline(
     #[props(default)] class: String,
     #[props(default)] style: String,
     #[props(default)] on_error: EventHandler<MindMapError>,
+    #[props(default)] blur_commits: bool,
 ) -> Element {
     let mut focus = use_signal(|| None::<String>);
     let dragging = use_signal(|| None::<String>);
@@ -69,7 +70,7 @@ pub fn Outline(
             }
             div {role:"tree",
                 for (node,depth) in rows {
-                    OutlineRow {key:"{node.id}", selected:selection.contains(&node.id), node, depth, handle, locale, focus, dragging, hidden, on_error}
+                    OutlineRow {key:"{node.id}", selected:selection.contains(&node.id), node, depth, handle, locale, focus, dragging, hidden, on_error, blur_commits}
                 }
             }
         }
@@ -86,6 +87,7 @@ fn OutlineRow(
     mut dragging: Signal<Option<String>>,
     mut hidden: Signal<BTreeSet<String>>,
     on_error: EventHandler<MindMapError>,
+    blur_commits: bool,
 ) -> Element {
     let owner = dioxus::core::current_scope_id().0;
     let mut editing = use_signal(|| false);
@@ -95,6 +97,15 @@ fn OutlineRow(
     let mut focused = use_signal(|| false);
     let is_hidden = hidden.read().contains(&node.id);
     let mut edit_revision = use_signal(|| None::<u64>);
+    let cancel_id = node.id.clone();
+    let watch_id = node.id.clone();
+    let cancel = use_callback(move |_: ()| {
+        if handle.edits(owner, &cancel_id) {
+            if let Err(error) = handle.cancel_pending() {
+                on_error.call(error);
+            }
+        }
+    });
     use_effect(move || {
         if editing()
             && !matches!((handle.revision(), *edit_revision.read()), (Ok(current),Some(start)) if current==start)
@@ -103,8 +114,10 @@ fn OutlineRow(
         }
     });
     use_effect(move || {
-        if !matches!(handle.owns_editor(owner), Ok(true))
-            || !matches!(handle.is_read_only(), Ok(false))
+        if editing()
+            && (!matches!(handle.owns_editor(owner), Ok(true))
+                || !matches!(handle.is_read_only(), Ok(false))
+                || !handle.edits(owner, &watch_id))
         {
             editing.set(false);
         }
@@ -116,7 +129,7 @@ fn OutlineRow(
     let key_node = node.clone();
     let drag_id = node.id.clone();
     let drop_id = node.id.clone();
-    let input_id = node.id.clone();
+
     let report = move |result: Result<(), MindMapError>| {
         if let Err(error) = result {
             on_error.call(error);
@@ -128,7 +141,7 @@ fn OutlineRow(
                 return Err(MindMapError::ReadOnly);
             }
             handle.select(std::slice::from_ref(&edit_node.id))?;
-            handle.claim_editor(owner)?;
+            handle.begin_edit(owner, &edit_node.id, &edit_node.topic)?;
             edit_revision.set(Some(handle.revision()?));
             draft.set(edit_node.topic.clone());
             editing.set(true);
@@ -169,19 +182,23 @@ fn OutlineRow(
                 textarea {class:"dme-outline-editor", rows:"2", aria_label:if locale==Locale::Zh {"编辑大纲节点"} else {"Edit outline node"},value:node.topic.clone(),autofocus:true,
                     onmounted:move |event| async move {if let Err(error)=event.data().set_focus(true).await {if !*focused.peek() {on_error.call(MindMapError::Measurement(error.to_string()));}}},
                     onfocus:move |_| focused.set(true),
-                    oninput:move |event| draft.set(event.value()),
+                    oninput:move |event| {let value=event.value(); handle.update_draft(owner, value.clone()); draft.set(value);},
                     oncompositionstart:move |_| {composing.set(true);ended.set(false);},oncompositionend:move |_| {composing.set(false);ended.set(true);},onkeyup:move |_| ended.set(false),
                     onkeydown:move |event| {
                         event.stop_propagation(); if composing() || ended() || event.is_composing() {return;}
-                        if event.key()==Key::Escape {event.prevent_default();editing.set(false);}
+                        if event.key()==Key::Escape {event.prevent_default();editing.set(false);cancel.call(());}
                         else if event.key()==Key::Enter && !event.modifiers().shift() {event.prevent_default();editing.set(false);
-                            if !draft.peek().trim().is_empty() && *draft.peek()!=node.topic {
-                                report(handle.apply(Operation::SetTopic{id:input_id.clone(),topic:draft.peek().clone()}).map(|_|()));
-                            }
+                            handle.update_draft(owner, draft.peek().clone());
+                            report(handle.commit_pending().map(|_|()));
                         }
-                    },onblur:move |_| {focused.set(false);editing.set(false);}
+                    },onblur:move |_| {focused.set(false);
+                        if editing() {editing.set(false); if blur_commits {handle.update_draft(owner, draft.peek().clone()); report(handle.commit_pending().map(|_|()));} else {cancel.call(());}}
+                    }
                 }
-            } else {span {class:"dme-outline-label", "{node.topic}"}}
+            } else {span {class:"dme-outline-label", "{node.topic}"}
+                if node.image.is_some() {span {class:"dme-outline-badge", "data-badge":"image", aria_label:if locale==Locale::Zh {"有配图"} else {"Has image"}}}
+                if node.note.is_some() {span {class:"dme-outline-badge", "data-badge":"note", aria_label:if locale==Locale::Zh {"有备注"} else {"Has note"}}}
+            }
             button {class:"dme-outline-action",r#type:"button",title:if locale==Locale::Zh {"聚焦此分支"} else {"Focus branch"},onclick:move |event| {event.stop_propagation();focus.set(Some(fold_id.clone()));},"↗"}
         }
 

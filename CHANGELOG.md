@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — unreleased
+
+- Node pictures: `Node.image` (`NodeImage { url, width, height, alt }`), rendered above the topic with a
+  host `image_url` resolver, a visible fallback when loading fails, and `Operation::SetImage`.
+- `Operation::SetNote` edits plain-text notes as undoable transactions; nodes with notes or pictures show
+  small markers on the canvas and in the outline.
+- Host-visible topic drafts: `MindMapHandle::{pending_edit, commit_pending, cancel_pending}` and
+  `PendingEdit`, shared by the map and outline editors. `blur_commits` on `EditableMindMap`/`Outline`
+  commits instead of discarding a draft on blur (IME composition is still protected).
+- `fit_revision` fits all visible nodes into the view (never magnifies); `plugins::gesture::fit`.
+- JSON documents may now contain `image`; malformed pictures are rejected with a path.
 
 - Consolidate the public demo under `demo/` and all regression applications/runners under `tests/`; keep two reference documents.
 - Replace implementation-stage notes and the initialization example with maintained usage, compatibility and provenance documents.

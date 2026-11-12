@@ -100,11 +100,12 @@ pub fn to_plaintext(data: &MindMapData) -> Result<String, MindMapError> {
     while let Some((node, depth)) = pending.pop() {
         if node.style.is_some()
             || node.note.is_some()
+            || node.image.is_some()
             || node.metadata.is_some()
             || node.branch_color.is_some()
         {
             return Err(MindMapError::InvalidOperation(
-                "Plaintext cannot preserve style, note or metadata; use JSON".into(),
+                "Plaintext cannot preserve style, note, image or metadata; use JSON".into(),
             ));
         }
         let topic = node.topic.replace('\\', "\\\\").replace('\n', "\\n");

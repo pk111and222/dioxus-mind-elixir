@@ -117,3 +117,15 @@ compact 下 gap-x/gap-y 缺省为 24px/10px；宿主显式变量覆盖仍优先�
   --dme-drop-border: 2px dashed #8569c1;
 }
 ```
+
+## 配图与备注（0.1.1）
+
+| 变量 | 默认/用途 |
+| --- | --- |
+| `--dme-image-margin` | 0 auto 6px，配图外边距 |
+| `--dme-image-radius` | 6px，配图圆角 |
+| `--dme-image-missing-border` / `-color` / `-background` | 1px dashed #c9a2a6；#a32e36；transparent，图片无法显示时的占位 |
+| `--dme-note-marker-size` / `--dme-note-marker-color` | 7px；#c08a2d，有备注的小圆点（大纲同色） |
+| `--dme-image-badge-color` | #388c69，大纲中“有配图”的标记 |
+
+`--dme-image-width` 由组件按节点配图宽度写在节点上，用来放宽节点最大宽度，不是外部主题参数。
